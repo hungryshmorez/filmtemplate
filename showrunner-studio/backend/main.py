@@ -589,6 +589,42 @@ changes. Do NOT add commentary before or after. Output the script and nothing el
 
 _ai_jobs: dict[str, dict] = {}
 
+# --- Genre-aware prompt addenda ---------------------------------------------
+#
+# The three master prompts above are genre-agnostic on purpose (they encode
+# craft fundamentals that apply everywhere). GENRE_NOTES supplies a short,
+# genre-specific craft brief that gets appended as a "GENRE FOCUS" block to
+# whichever prompt is running, so the same exec/writer/surgeon persona still
+# judges/writes/rewrites with the right structural and tonal instincts for
+# the 14 genres the app supports.
+
+GENRE_NOTES: dict[str, str] = {
+    "Comedy": "Joke density and misdirection are the engine — every beat should set up a joke, subvert it, or both. Reward efficient, escalating bits over one-off gags. Flag any scene that could lose its funniest line and still work; that line is dead weight if it isn't load-bearing.",
+    "Sitcom": "Multi-camera rhythm: scenes play in a small number of contained sets, built around a cold open, A/B plot collision, and a button/tag. Dialogue should land in laugh-beat chunks an audience could applaud. Watch for stakes that are too high for the format — sitcom conflict resolves and resets by the credits.",
+    "Drama": "Slow-burn escalation and internal stakes matter more than plot mechanics. Every scene should shift a relationship or a character's self-knowledge, even quietly. Distrust dialogue that states emotion outright — dramatic weight lives in restraint and what's withheld.",
+    "Reality TV": "Manufactured spontaneity: confessional-style asides, producer-engineered conflict, and edit-friendly beats (setup / reaction / consequence) matter more than traditional scene craft. Judge whether the 'characters' (real people, heightened) have distinct edit personas and whether the conflict is structured to escalate across an episode arc.",
+    "Sci-Fi": "The speculative conceit must generate story, not just decorate it — ask what changes about human behavior because of the tech/world rule, and hold that rule consistent. World-building exposition should be smuggled through action and consequence, never delivered as a lecture.",
+    "Anime": "Heightened emotional register and escalating power/stakes are the format's native language — earn big swings with clear internal logic and character conviction rather than dismissing them as excessive. Watch pacing for the genre's signature rhythm: extended beats of tension/buildup punctuated by sudden, decisive turns.",
+    "Fantasy": "World rules (magic systems, factions, mythology) must have consistent costs and limits — track them like physics. Judge whether the fantastical elements are load-bearing to the plot/theme or just set dressing. Exposition about the world should ride on character need, not travelogue narration.",
+    "Family": "Story must work on two registers at once — a surface-level plot legible to kids and a subtext layer that rewards adult viewers. Conflict resolves with an earned, non-preachy emotional beat. Flag anything that talks down to its audience or moralizes directly instead of dramatizing the lesson.",
+    "Western": "Terrain and silence are characters — pacing should breathe, with sparse, weighted dialogue and physical stakes (land, water, law vs. no law) driving the plot. Judge whether the moral code of the world (honor, vengeance, survival) is clear and consistently tested, not just aesthetic dressing.",
+    "Crime": "The plan/execution/complication engine must escalate logically — every twist should re-contextualize earlier information rather than come from nowhere. Track procedural or criminal detail for internal consistency; sloppy logic breaks genre trust faster than anything else.",
+    "Action & Adventure": "Physical stakes and momentum are the spine — every set piece should advance character or plot, not just spectacle. Judge geography and stakes clarity: can the audience track where everyone is and what they lose if this goes wrong? Cut any lull that isn't earning a breather beat before the next escalation.",
+    "Romance": "The relationship's obstacle (internal or external) must feel specific and earned, not manufactured misunderstanding. Track the push-pull rhythm scene to scene — attraction, friction, vulnerability — and judge whether the eventual turn is earned by specific beats rather than a genre-mandated timer running out.",
+    "Horror": "Dread is a pacing discipline — judge the ratio of unease-building beats to release/scare beats, and whether the scare is earned by everything preceding it. The threat's rules (what it can/can't do, why now) must stay consistent; random rule-breaks for shock value kill audience trust.",
+    "Action-Adventure": "Physical stakes and momentum are the spine — every set piece should advance character or plot, not just spectacle.",
+    "Live Action": "Judge groundedness: physical staging, blocking and practical logistics should read as filmable in the real world, not just conceptually cool. Flag anything that only works as an idea and falls apart when you imagine an actual crew and cast executing it on a real set.",
+}
+
+
+def genre_focus_block(genre: str | None) -> str:
+    note = GENRE_NOTES.get((genre or "").strip())
+    if not note:
+        return ""
+    return f"\nGENRE FOCUS ({genre}): {note}\n"
+
+
+
 
 class CritiqueRequest(BaseModel):
     text: str = Field(..., description="The script / series text to critique")
@@ -599,6 +635,7 @@ class CritiqueRequest(BaseModel):
 class WriteScriptRequest(BaseModel):
     idea: str = Field(..., description="The idea to expand into a script")
     showBible: Optional[str] = None
+    genre: Optional[str] = None
     targetLength: Optional[str] = Field(
         None, description='e.g. "cold open + 1 scene", "full pilot", "11-minute episode"'
     )
@@ -607,6 +644,7 @@ class WriteScriptRequest(BaseModel):
 class RewriteScriptRequest(BaseModel):
     script: str = Field(..., description="The existing script to overhaul")
     notes: Optional[str] = Field(None, description="Optional exec notes / focus areas to apply")
+    genre: Optional[str] = None
 
 
 def _start_ai_job(prompt_builder):
@@ -652,7 +690,7 @@ async def critique_start(req: CritiqueRequest):
     prompt = f"{header}THE SUBMISSION:\n\n{req.text.strip()}"
 
     def builder():
-        return [CRITIQUE_SYSTEM_PROMPT, prompt]
+        return [CRITIQUE_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt]
 
     return _start_ai_job(builder)
 
@@ -670,7 +708,7 @@ async def write_script_start(req: WriteScriptRequest):
     prompt = "\n".join(parts)
 
     def builder():
-        return [SCRIPT_ENGINE_SYSTEM_PROMPT, prompt]
+        return [SCRIPT_ENGINE_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt]
 
     return _start_ai_job(builder)
 
@@ -686,6 +724,6 @@ async def rewrite_start(req: RewriteScriptRequest):
     prompt = "\n".join(parts)
 
     def builder():
-        return [SURGICAL_SYSTEM_PROMPT, prompt]
+        return [SURGICAL_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt]
 
     return _start_ai_job(builder)

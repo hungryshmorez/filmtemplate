@@ -146,11 +146,16 @@ export function CritiquePanel({
       void run("/api/write-script/start", {
         idea,
         showBible: combinedBible || null,
+        genre: (templateFormat !== "none" ? templateGenre : showGenre) || null,
         targetLength,
       });
     } else {
       if (!rewriteScript.trim()) return;
-      void run("/api/rewrite/start", { script: rewriteScript, notes: rewriteNotes.trim() || null });
+      void run("/api/rewrite/start", {
+        script: rewriteScript,
+        notes: rewriteNotes.trim() || null,
+        genre: showGenre || null,
+      });
     }
   };
 
