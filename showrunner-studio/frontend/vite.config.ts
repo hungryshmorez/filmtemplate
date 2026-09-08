@@ -17,6 +17,10 @@ export default defineConfig(() => {
           target: `http://localhost:${backendPort}`,
           changeOrigin: true,
         },
+        '/legacy': {
+          target: `http://localhost:${backendPort}`,
+          changeOrigin: true,
+        },
       },
     },
   }
