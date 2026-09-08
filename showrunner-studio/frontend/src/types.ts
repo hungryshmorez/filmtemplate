@@ -1,0 +1,163 @@
+// types.ts — Core data model for Showrunner / Seedance Studio
+
+export type CharacterRole = "Protagonist" | "Antagonist" | "Supporting";
+
+export interface ShowMeta {
+  id: string;
+  title: string;
+  genre: string;
+  premise: string; // world rules, lore, visual style, glitch/broadcast aesthetics
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SetEntity {
+  id: string;
+  showId: string;
+  name: string; // exact name used for #TagName calls
+  timeOfDay: string; // "Interior" | "Exterior" | "Night" | "Liminal" | free text
+  description: string; // physical traits, props, textures, ambient audio
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CharacterEntity {
+  id: string;
+  showId: string;
+  name: string; // exact name used for @CharacterName calls
+  role: CharacterRole;
+  age: string; // number or free text ("62yo", "ageless")
+  gender: string;
+  visualDescription: string; // physical form, material, clothing, visual quirks
+  voiceDescription: string; // timbre, dialect, cadence, audio processing/distortion traits
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DialogueLine {
+  id: string;
+  characterId: string;
+  text: string;
+  parenthetical?: string;
+}
+
+export interface SceneEntity {
+  id: string;
+  episodeId: string;
+  sceneName: string;
+  order: number;
+  targetSetId: string | null; // links to Set catalog
+  activeCharacterIds: string[]; // links to Character catalog
+  action: string; // cinematic verbs, stage movement, camera instructions
+  dialogue: DialogueLine[];
+  sceneNotes: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface EpisodeEntity {
+  id: string;
+  showId: string;
+  title: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// --- Export engine types ---
+
+export type TransitionType =
+  | "hard_cut"
+  | "cut_to_black"
+  | "dissolve"
+  | "whip_pan"
+  | "match_cut"
+  | "push_through";
+
+/** An explicit written-out cut between two takes. afterTake/toTake are take numbers. */
+export interface TakeTransition {
+  afterTake: number;
+  toTake: number;
+  type: TransitionType;
+  nextCastNames: string[];
+  nextSetName: string | null;
+}
+
+export type AspectRatio = "16:9" | "9:16" | "1:1" | "4:3" | "21:9";
+
+export interface SeedanceShotBlock {
+  shotNumber: number;
+  takeNumber: number; // a "take" = 1 regular generation + up to 3 locked-cast extensions
+  segmentIndex: number; // 0 = regular generation, 1-3 = extension
+  generationType: "regular" | "extension";
+  durationSeconds: number; // fixed 15s per Seedance's per-generation cap
+  aspect: AspectRatio;
+  tags: string; // "@Char1 @Char2 #SetName"
+  characterDnaRefs: string[]; // ["DNA_CUSTARD_CURATOR", ...]
+  castNames: string[]; // locked cast for this take (max 3)
+  setName: string | null;
+  subjectMotion: string;
+  cameraMotion: string;
+  beats: string[];
+  audio: {
+    speech: { characterName: string; line: string }[];
+    ambient: string;
+    sfx: string;
+    voiceProfiles: { characterName: string; voiceDescription: string }[];
+  };
+}
+
+export interface SeedanceCastWarning {
+  takeNumber: number;
+  excludedNames: string[];
+}
+
+export interface SeedanceExportPayload {
+  sceneId: string;
+  sceneName: string;
+  aspect: AspectRatio;
+  fps: number;
+  totalShots: number;
+  totalTakes: number;
+  characterDna: Record<string, string>; // DNA_KEY -> description
+  shots: SeedanceShotBlock[];
+  castWarnings: SeedanceCastWarning[];
+  pacingWarnings: ShowrunnerPacingWarning[];
+  takeTransitions: TakeTransition[];
+}
+
+export interface ShowrunnerClip {
+  takeNumber: number; // 1-based — a "take" is a locked-cast chain of up to 4 segments
+  segmentIndex: number; // 0 = the regular (first) generation, 1-3 = extensions
+  generationType: "regular" | "extension";
+  tagLine: string; // "@Character1 @Character2 #SetName"
+  shotFraming: string; // "Wide shot:" | "Extreme close-up:" | "Push-in:" etc.
+  description: string;
+  dialogue: { characterName: string; text: string; parenthetical?: string }[];
+  durationSeconds: number; // fixed 15s per Showrunner/Seedance clip limit
+  castNames: string[]; // locked cast for this take (max 3)
+  setName: string | null;
+}
+
+export interface ShowrunnerCastWarning {
+  takeNumber: number;
+  excludedNames: string[];
+}
+
+/** A clip whose dialogue exceeds what can naturally be spoken in 15 seconds. */
+export interface ShowrunnerPacingWarning {
+  takeNumber: number;
+  segmentIndex: number;
+  wordCount: number;
+  maxWords: number;
+}
+
+export interface ShowrunnerFormatResult {
+  sceneId: string;
+  sceneName: string;
+  clips: ShowrunnerClip[];
+  dialogueBlocks: { characterName: string; text: string; parenthetical?: string }[];
+  castWarnings: ShowrunnerCastWarning[];
+  pacingWarnings: ShowrunnerPacingWarning[];
+  takeTransitions: TakeTransition[];
+}

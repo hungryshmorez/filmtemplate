@@ -1,0 +1,13 @@
+{
+  "backend": {
+    "root": "showrunner-studio/backend",
+    "entry": "main:app",
+    "runner": "uvicorn"
+  },
+  "frontend": {
+    "root": "showrunner-studio/frontend",
+    "dist": "dist",
+    "install": "npm install",
+    "build": "npm run build"
+  }
+}

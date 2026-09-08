@@ -1,9 +1,18 @@
 # Dependencies
 node_modules/
 
+# Python
+.venv/
+__pycache__/
+*.pyc
+
 # Build output
 dist/
 build/
+
+# Env
+.env
+.env.local
 
 # Logs
 *.log
