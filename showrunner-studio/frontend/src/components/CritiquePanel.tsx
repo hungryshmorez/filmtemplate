@@ -167,6 +167,31 @@ export function CritiquePanel({
         ? idea.trim().length > 0
         : rewriteScript.trim().length > 0);
 
+  // --- Cross-tab chaining: write -> critique -> rewrite -> critique ... ---
+  const sendOutputToCritique = () => {
+    if (!output) return;
+    setCritiqueText(output);
+    setOutput(null);
+    setError(null);
+    setKind("critique");
+  };
+
+  const sendOutputToRewrite = () => {
+    if (!output) return;
+    // From "write": the freshly written script becomes the thing to rewrite.
+    // From "critique": the ORIGINAL script (still sitting in critiqueText)
+    // is what gets rewritten, with the verdict fed in as exec notes.
+    if (kind === "critique") {
+      setRewriteScript(critiqueText);
+      setRewriteNotes(output);
+    } else {
+      setRewriteScript(output);
+    }
+    setOutput(null);
+    setError(null);
+    setKind("rewrite");
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/70 p-0 sm:items-center sm:p-6">
       <div className="flex h-full w-full max-w-5xl flex-col overflow-hidden bg-neutral-950 sm:h-[min(92vh,900px)] sm:rounded-xl sm:border sm:border-neutral-800">
@@ -332,7 +357,19 @@ export function CritiquePanel({
             <div ref={outputRef}>
               <div className="flex items-center justify-between">
                 <Label>{kind === "critique" ? "Exec verdict" : "Script"}</Label>
-                <CopyButton text={output} />
+                <div className="flex items-center gap-2">
+                  {kind !== "critique" && (
+                    <Button variant="ghost" size="sm" onClick={sendOutputToCritique}>
+                      Send to Critique
+                    </Button>
+                  )}
+                  {kind !== "rewrite" && (
+                    <Button variant="ghost" size="sm" onClick={sendOutputToRewrite}>
+                      {kind === "critique" ? "Send to Rewrite (with notes)" : "Send to Rewrite"}
+                    </Button>
+                  )}
+                  <CopyButton text={output} />
+                </div>
               </div>
               <pre className="mt-1.5 max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 font-mono text-[12px] leading-relaxed text-neutral-200">
                 {output}
