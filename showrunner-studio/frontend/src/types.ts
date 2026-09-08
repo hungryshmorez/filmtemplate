@@ -96,6 +96,7 @@ export interface SeedanceShotBlock {
   characterDnaRefs: string[]; // ["DNA_CUSTARD_CURATOR", ...]
   castNames: string[]; // locked cast for this take (max 3)
   setName: string | null;
+  surroundings: string; // visual atmosphere/surroundings for THIS generation — restated every shot since each 15s call is a standalone gen
   subjectMotion: string;
   cameraMotion: string;
   beats: string[];
@@ -137,6 +138,7 @@ export interface ShowrunnerClip {
   durationSeconds: number; // fixed 15s per Showrunner/Seedance clip limit
   castNames: string[]; // locked cast for this take (max 3)
   setName: string | null;
+  surroundings: string; // visual atmosphere/surroundings for THIS generation — restated every clip since each 15s call is a standalone gen
 }
 
 export interface ShowrunnerCastWarning {

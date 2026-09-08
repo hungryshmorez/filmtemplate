@@ -195,6 +195,7 @@ export function formatSceneForShowrunner(
       durationSeconds: CLIP_SECONDS,
       castNames,
       setName: set?.name ?? null,
+      surroundings: set?.description || "(no set/atmosphere description on file)",
     };
   });
 
@@ -283,6 +284,7 @@ export function renderShowrunnerBlocks(result: ShowrunnerFormatResult): string {
         : `EXTENDED GENERATION (extension ${clip.segmentIndex} of ${MAX_EXTENSIONS_PER_TAKE} — do not change cast)`;
     lines.push(`--- ${genLabel} — ${clip.durationSeconds}s ---`);
     lines.push(clip.tagLine);
+    lines.push(`SURROUNDINGS/ATMOSPHERE (this generation, in ${clip.setName ?? "unset set"}): ${clip.surroundings}`);
     lines.push(`${clip.shotFraming} ${clip.description}`);
     if (clip.dialogue.length) {
       lines.push(`Dialogue in this clip (max ~${MAX_DIALOGUE_WORDS_PER_CLIP} words for ${clip.durationSeconds}s):`);

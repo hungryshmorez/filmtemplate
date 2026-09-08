@@ -195,6 +195,7 @@ export function exportSceneToSeedance(
       characterDnaRefs: dnaRefs,
       castNames,
       setName: set?.name ?? null,
+      surroundings: set?.description || "(no set/atmosphere description on file)",
       subjectMotion,
       cameraMotion,
       beats,
@@ -314,6 +315,7 @@ export function renderSeedancePayload(payload: SeedanceExportPayload): string {
     lines.push(`TAGS: ${shot.tags}`);
     lines.push(`CHARACTER_DNA: ${shot.characterDnaRefs.join(", ")}`);
     lines.push("");
+    lines.push(`SURROUNDINGS/ATMOSPHERE (this generation, in ${shot.setName ?? "unset set"}): ${shot.surroundings}`);
     lines.push(`SUBJECT MOTION: ${shot.subjectMotion}`);
     lines.push(`CAMERA MOTION: ${shot.cameraMotion}`);
     lines.push("BEATS:");

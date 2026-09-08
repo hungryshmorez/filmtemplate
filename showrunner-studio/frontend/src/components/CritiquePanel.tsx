@@ -3,8 +3,16 @@
 // surgically rewrite an existing script. Long generations run as background
 // jobs — this panel starts one and polls /api/ai/status/{id}.
 import { useEffect, useRef, useState } from "react";
-import { FlaskConical, Gavel, PenLine, Scissors } from "lucide-react";
+import { FlaskConical, Gavel, PenLine, Scissors, Sparkles } from "lucide-react";
 import { Button, CopyButton, Field, Label, Spinner, TextArea, TextInput } from "./ui";
+import {
+  GENRES,
+  getTvEngine,
+  getFilmSuite,
+  renderTvEngineBrief,
+  renderFilmTemplateBrief,
+  type Genre,
+} from "../lib/storyTemplates";
 
 type LabKind = "critique" | "write" | "rewrite";
 
@@ -61,6 +69,11 @@ export function CritiquePanel({
   const [rewriteNotes, setRewriteNotes] = useState("");
   const [targetLength, setTargetLength] = useState("full pilot");
 
+  // Story template brainstorm scaffold (Write Script tab only).
+  const [templateFormat, setTemplateFormat] = useState<"none" | "tv" | "film">("none");
+  const [templateGenre, setTemplateGenre] = useState<Genre>(GENRES[0]);
+  const [filmTemplateName, setFilmTemplateName] = useState<string>("");
+
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [output, setOutput] = useState<string | null>(null);
@@ -77,9 +90,12 @@ export function CritiquePanel({
         setCritiqueText(currentScriptText);
         setRewriteScript(currentScriptText);
       }
+      if (showGenre && (GENRES as string[]).includes(showGenre)) {
+        setTemplateGenre(showGenre as Genre);
+      }
     }
     if (!open) setSeeded(false);
-  }, [open, seeded, showBibleText, currentScriptText]);
+  }, [open, seeded, showBibleText, currentScriptText, showGenre]);
 
   useEffect(() => {
     if (!running) return;
@@ -120,9 +136,16 @@ export function CritiquePanel({
       void run("/api/critique/start", { text: critiqueText, showTitle, genre: showGenre });
     } else if (kind === "write") {
       if (!idea.trim()) return;
+      const templateBrief =
+        templateFormat === "tv"
+          ? renderTvEngineBrief(getTvEngine(templateGenre)!)
+          : templateFormat === "film"
+            ? renderFilmTemplateBrief(getFilmSuite(templateGenre)!, filmTemplateName || undefined)
+            : "";
+      const combinedBible = [templateBrief, bibleText.trim()].filter(Boolean).join("\n\n---\n\n");
       void run("/api/write-script/start", {
         idea,
-        showBible: bibleText.trim() || null,
+        showBible: combinedBible || null,
         targetLength,
       });
     } else {
@@ -190,6 +213,74 @@ export function CritiquePanel({
 
           {kind === "write" && (
             <>
+              <Field
+                label="Story template (optional brainstorm scaffold)"
+                hint="Pulled from the Beta Tester Guide's genre engines/act suites. Injected into the show bible sent to the writer — doesn't touch your notes below."
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  {(["none", "tv", "film"] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setTemplateFormat(f)}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                        templateFormat === f
+                          ? "bg-amber-500/15 text-amber-300"
+                          : "bg-neutral-900 text-neutral-400 hover:text-neutral-200"
+                      }`}
+                    >
+                      {f === "none" && "No template"}
+                      {f === "tv" && (
+                        <>
+                          <Sparkles size={11} aria-hidden /> TV 5-Beat Engine
+                        </>
+                      )}
+                      {f === "film" && (
+                        <>
+                          <Sparkles size={11} aria-hidden /> Film 3-Act Suite
+                        </>
+                      )}
+                    </button>
+                  ))}
+                  {templateFormat !== "none" && (
+                    <select
+                      value={templateGenre}
+                      onChange={(e) => {
+                        setTemplateGenre(e.target.value as Genre);
+                        setFilmTemplateName("");
+                      }}
+                      className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200"
+                    >
+                      {GENRES.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {templateFormat === "film" && (
+                    <select
+                      value={filmTemplateName}
+                      onChange={(e) => setFilmTemplateName(e.target.value)}
+                      className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200"
+                    >
+                      <option value="">Both templates</option>
+                      {getFilmSuite(templateGenre)?.templates.map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name} ({t.arc})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {templateFormat !== "none" && (
+                  <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-neutral-800 bg-neutral-900/60 p-2.5 font-mono text-[11px] leading-relaxed text-neutral-400">
+                    {templateFormat === "tv"
+                      ? renderTvEngineBrief(getTvEngine(templateGenre)!)
+                      : renderFilmTemplateBrief(getFilmSuite(templateGenre)!, filmTemplateName || undefined)}
+                  </pre>
+                )}
+              </Field>
               <Field label="Your idea" hint="One line or ten — the engine expands it into a screenplay.">
                 <TextArea
                   rows={4}
