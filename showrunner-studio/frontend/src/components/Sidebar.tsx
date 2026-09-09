@@ -1,9 +1,9 @@
 // Sidebar.tsx — Project tree (Shows → Episodes → Scenes) + catalog shortcuts.
 import { useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { BookOpen, ChevronRight, FileUp, FlaskConical, MapPin, Pencil, Plus, Trash, Users } from "lucide-react";
+import { BookOpen, ChevronRight, FileUp, FlaskConical, Library, MapPin, Pencil, Plus, Sparkles, Trash, Users } from "lucide-react";
 import type { EpisodeEntity, SceneEntity, ShowMeta } from "../types";
-import { Button } from "./ui";
+import { Button, Spinner } from "./ui";
 
 interface SidebarProps {
   shows: ShowMeta[];
@@ -30,6 +30,10 @@ interface SidebarProps {
   onOpenShowBible: () => void;
   onOpenImport: () => void;
   onOpenAiLab: () => void;
+  onOpenTemplates: () => void;
+  templateCount: number;
+  onFinalizeEpisode: (ep: EpisodeEntity) => void;
+  finalizingEpisodeId: string | null;
 }
 
 function Section({ title, count, onAdd, addLabel, empty, children }: {
@@ -64,7 +68,7 @@ function Section({ title, count, onAdd, addLabel, empty, children }: {
   );
 }
 
-function TreeRow({ active, label, sub, onSelect, onDelete, deleteTitle, onRename }: {
+function TreeRow({ active, label, sub, onSelect, onDelete, deleteTitle, onRename, onFinalize, finalized, finalizing }: {
   active: boolean;
   label: string;
   sub?: string;
@@ -72,6 +76,9 @@ function TreeRow({ active, label, sub, onSelect, onDelete, deleteTitle, onRename
   onDelete?: () => void;
   deleteTitle?: string;
   onRename?: (next: string) => void;
+  onFinalize?: () => void;
+  finalized?: boolean;
+  finalizing?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(label);
@@ -118,6 +125,31 @@ function TreeRow({ active, label, sub, onSelect, onDelete, deleteTitle, onRename
         {label}
       </button>
       {sub && <span className="shrink-0 font-mono text-[9px] text-neutral-600">{sub}</span>}
+      {onFinalize && (
+        <button
+          type="button"
+          title={
+            finalizing
+              ? "Extracting a reusable template…"
+              : finalized
+                ? "Re-finalize: extract a fresh template from this episode"
+                : "Finalize: strip a reusable template out of this episode into the library"
+          }
+          aria-label={`Finalize ${label}`}
+          disabled={finalizing}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFinalize();
+          }}
+          className={clsx(
+            "shrink-0 rounded p-1 transition-colors",
+            finalized ? "text-amber-500/70 hover:bg-amber-950/40 hover:text-amber-300" : "text-neutral-500 hover:bg-neutral-800 hover:text-amber-300",
+            finalizing && "opacity-60"
+          )}
+        >
+          {finalizing ? <Spinner size={11} /> : <Sparkles size={12} />}
+        </button>
+      )}
       {onRename && (
         <button
           type="button"
@@ -160,6 +192,7 @@ export function Sidebar(props: SidebarProps) {
     onDeleteShow, onDeleteEpisode, onDeleteScene,
     onRenameShow, onRenameEpisode,
     onOpenSets, onOpenCharacters, onOpenShowBible, onOpenImport, onOpenAiLab,
+    onOpenTemplates, templateCount, onFinalizeEpisode, finalizingEpisodeId,
   } = props;
 
   return (
@@ -198,6 +231,9 @@ export function Sidebar(props: SidebarProps) {
             onRename={(t) => onRenameEpisode(ep, t)}
             onDelete={() => onDeleteEpisode(ep)}
             deleteTitle="Delete episode and its scenes"
+            onFinalize={() => onFinalizeEpisode(ep)}
+            finalized={!!ep.finalizedAt}
+            finalizing={finalizingEpisodeId === ep.id}
           />
         ))}
       </Section>
@@ -235,6 +271,11 @@ export function Sidebar(props: SidebarProps) {
           <Users size={13} />
           Characters
           <span className="ml-auto font-mono text-[10px] text-neutral-500">{characterCount}</span>
+        </Button>
+        <Button variant="subtle" size="md" className="w-full justify-start" onClick={onOpenTemplates}>
+          <Library size={13} />
+          Learned Templates
+          <span className="ml-auto font-mono text-[10px] text-neutral-500">{templateCount}</span>
         </Button>
         <Button variant="subtle" size="md" className="w-full justify-start" onClick={onOpenShowBible} disabled={!selectedShowId}>
           <BookOpen size={13} />

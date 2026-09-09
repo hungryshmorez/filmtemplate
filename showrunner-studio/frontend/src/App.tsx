@@ -14,18 +14,19 @@ import {
   updateEpisode,
   updateShow,
 } from "./lib/actions";
-import type { CharacterEntity, EpisodeEntity, SceneEntity, SetEntity, ShowMeta } from "./types";
+import type { CharacterEntity, EpisodeEntity, LearnedTemplate, SceneEntity, SetEntity, ShowMeta } from "./types";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { CritiquePanel } from "./components/CritiquePanel";
 import { useConfirm } from "./components/ConfirmDialog";
 import { SceneEditor } from "./components/SceneEditor";
 import { OutputPanel } from "./components/OutputPanel";
-import { CharactersManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
+import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
 import { ImportPanel } from "./components/ImportPanel";
 import { Button, Field, Modal, TextInput } from "./components/ui";
+import { finalizeEpisode } from "./lib/templateLearning";
 
-type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | null;
+type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | null;
 
 export default function App() {
   const confirm = useConfirm();
@@ -33,6 +34,9 @@ export default function App() {
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalKind>(null);
+  const [finalizingEpisodeId, setFinalizingEpisodeId] = useState<string | null>(null);
+  const [finalizeResult, setFinalizeResult] = useState<LearnedTemplate | null>(null);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
   // --- Live queries -----------------------------------------------------------
   const shows = useLiveQuery(() => db.shows.orderBy("updatedAt").reverse().toArray(), [], [] as ShowMeta[]);
@@ -56,12 +60,18 @@ export default function App() {
     [selectedShowId],
     [] as CharacterEntity[]
   );
+  const learnedTemplates = useLiveQuery(
+    () => (selectedShowId ? db.learnedTemplates.where("showId").equals(selectedShowId).reverse().sortBy("createdAt") : Promise.resolve([] as LearnedTemplate[])),
+    [selectedShowId],
+    [] as LearnedTemplate[]
+  );
 
   const showList = shows ?? [];
   const episodeList = episodes ?? [];
   const sceneList = scenes ?? [];
   const setList = sets ?? [];
   const characterList = characters ?? [];
+  const templateList = learnedTemplates ?? [];
 
   const show = showList.find((s) => s.id === selectedShowId) ?? null;
   const episode = episodeList.find((e) => e.id === selectedEpisodeId) ?? null;
@@ -126,6 +136,35 @@ export default function App() {
     setSelectedSceneId(id);
   };
 
+  const finalizeEpisodeHandler = async (ep: EpisodeEntity) => {
+    if (finalizingEpisodeId) return;
+    const episodeScenes = await db.scenes.where("episodeId").equals(ep.id).sortBy("order");
+    if (episodeScenes.length === 0) {
+      setFinalizeError("This episode has no scenes yet — write it first, then finalize.");
+      return;
+    }
+    if (ep.finalizedAt) {
+      const ok = await confirm({
+        message: `"${ep.title}" was already finalized once. Extract a fresh template from its current draft anyway?`,
+        confirmLabel: "Re-finalize",
+      });
+      if (!ok) return;
+    }
+    setFinalizingEpisodeId(ep.id);
+    setFinalizeError(null);
+    try {
+      const showCharacters = await db.characters.where("showId").equals(ep.showId).toArray();
+      const showSets = await db.sets.where("showId").equals(ep.showId).toArray();
+      const showGenre = (await db.shows.get(ep.showId))?.genre || null;
+      const template = await finalizeEpisode(ep, episodeScenes, showCharacters, showSets, showGenre);
+      setFinalizeResult(template);
+    } catch (e) {
+      setFinalizeError(e instanceof Error ? e.message : "Template extraction failed.");
+    } finally {
+      setFinalizingEpisodeId(null);
+    }
+  };
+
   const noShows = showList.length === 0;
 
   return (
@@ -182,6 +221,10 @@ export default function App() {
             onOpenShowBible={() => setModal("bible")}
             onOpenImport={() => setModal("import")}
             onOpenAiLab={() => setModal("ailab")}
+            onOpenTemplates={() => setModal("templates")}
+            templateCount={templateList.length}
+            onFinalizeEpisode={finalizeEpisodeHandler}
+            finalizingEpisodeId={finalizingEpisodeId}
           />
 
           {/* Script editor */}
@@ -256,6 +299,11 @@ export default function App() {
             showId={show.id}
             characters={characterList}
           />
+          <LearnedTemplatesManager
+            open={modal === "templates"}
+            onClose={() => setModal(null)}
+            templates={templateList}
+          />
         </>
       )}
       <ShowBibleModal open={modal === "bible"} onClose={() => setModal(null)} show={show} />
@@ -266,6 +314,7 @@ export default function App() {
         showGenre={show?.genre ?? null}
         showBibleText={show?.premise?.trim() || null}
         currentScriptText={currentScriptText}
+        learnedTemplates={templateList}
       />
       <ImportPanel
         key={modal === "import" ? "open" : "closed"}
@@ -280,7 +329,62 @@ export default function App() {
           if (sceneId) setSelectedSceneId(sceneId);
         }}
       />
+      <FinalizeResultModal result={finalizeResult} onClose={() => setFinalizeResult(null)} />
+      <Modal open={!!finalizeError} onClose={() => setFinalizeError(null)} title="Couldn't finalize episode">
+        <div className="space-y-3 p-4">
+          <p className="text-[13px] leading-relaxed text-neutral-400">{finalizeError}</p>
+          <Button variant="primary" size="md" onClick={() => setFinalizeError(null)}>
+            OK
+          </Button>
+        </div>
+      </Modal>
     </div>
+  );
+}
+
+// --- Finalize-episode completion feedback --------------------------------------
+
+function FinalizeResultModal({ result, onClose }: { result: LearnedTemplate | null; onClose: () => void }) {
+  return (
+    <Modal
+      open={!!result}
+      onClose={onClose}
+      title="Template learned"
+      subtitle={result ? `Stripped from "${result.sourceEpisodeTitle}" — saved to the Learned Templates library.` : undefined}
+      wide
+    >
+      {result && (
+        <div className="space-y-3 p-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-neutral-500">{result.format} · {result.genre}</p>
+            <h3 className="text-sm font-semibold text-amber-300">{result.name}</h3>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-neutral-400">Concept</p>
+            <p className="text-[13px] leading-relaxed text-neutral-300">{result.concept}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-neutral-400">Mechanics</p>
+            <p className="text-[13px] leading-relaxed text-neutral-300">{result.mechanics}</p>
+          </div>
+          {result.beats.length > 0 && (
+            <div>
+              <p className="text-[11px] font-medium text-neutral-400">Beats</p>
+              <ol className="mt-1 space-y-1.5">
+                {result.beats.map((b, i) => (
+                  <li key={i} className="text-[13px] leading-relaxed text-neutral-300">
+                    <span className="font-medium text-neutral-100">{b.label}.</span> {b.description}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          <Button variant="primary" size="md" onClick={onClose}>
+            Nice
+          </Button>
+        </div>
+      )}
+    </Modal>
   );
 }
 

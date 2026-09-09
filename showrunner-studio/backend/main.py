@@ -638,6 +638,133 @@ def genre_focus_block(genre: str | None) -> str:
     return f"\nGENRE FOCUS ({genre}): {note}\n"
 
 
+# --- Organic template learning: strip a reusable template out of a --------
+# finished episode and hand it back to the frontend to save into the
+# growing "learned templates" library (Dexie table, distinct from the
+# static seed library in storyTemplates.ts).
+
+class TemplateBeat(BaseModel):
+    label: str
+    description: str
+
+
+class ExtractedTemplate(BaseModel):
+    name: str
+    format: str = "Episodic"
+    concept: str
+    mechanics: str
+    beats: list[TemplateBeat] = Field(default_factory=list)
+
+
+class ExtractTemplateRequest(BaseModel):
+    episodeTitle: str
+    genre: Optional[str] = None
+    episodeText: str = Field(..., description="Concatenated scene action + dialogue for the whole episode")
+
+
+TEMPLATE_EXTRACTION_SYSTEM_PROMPT = """\
+You are a Story Engine Archivist. Given a finished episode script, strip out everything specific \
+to THIS episode — character names, this episode's exact plot particulars, this show's proper \
+nouns and world-specific details — and abstract it into a general, REUSABLE story template that \
+could seed a completely different episode with different characters and a different specific \
+plot, while preserving the underlying structural mechanic that made this episode work.
+
+RULES:
+- name: a short, punchy label for the reusable mechanic/structure (e.g. "The A/B Plot Collision", \
+"The Escalating Lie").
+- format: one of Episodic | Serialized | Anthology | Case-of-the-Week | Bottle Episode (pick the \
+closest fit, or coin a short label if none fit).
+- concept: 1-3 sentences describing the abstracted structural idea, with every specific name or \
+detail replaced by a generic role (e.g. "the protagonist", "the antagonist", "the secondary set", \
+"the ensemble").
+- mechanics: 2-4 sentences on HOW the structure actually operates scene to scene — the mechanism \
+that generates story — described generically enough to be replayed with a totally different \
+specific plot.
+- beats: a 5-beat abstracted timeline (choose your own beat labels, e.g. Setup/Complication/ \
+Struggle/Turn/Resolution) with a one-sentence generic description of what structurally happens at \
+each beat.
+
+Output ONLY valid JSON matching the exact schema given. No markdown fences, no commentary, no \
+trailing text."""
+
+
+def build_template_extraction_prompt(req: ExtractTemplateRequest) -> str:
+    return f"""EPISODE: {req.episodeTitle}
+GENRE: {req.genre or "unknown"}
+
+FULL EPISODE (scene action + dialogue, in story order):
+---
+{req.episodeText.strip()}
+---
+
+Return JSON with this exact shape:
+{{
+  "name": "...",
+  "format": "...",
+  "concept": "...",
+  "mechanics": "...",
+  "beats": [{{"label": "...", "description": "..."}}]
+}}
+"""
+
+
+_template_jobs: dict[str, dict] = {}
+
+
+@app.post("/api/extract-template/start")
+async def extract_template_start(req: ExtractTemplateRequest):
+    if not req.episodeText.strip():
+        raise HTTPException(status_code=400, detail="No episode text to extract a template from.")
+
+    job_id = uuid.uuid4().hex
+    _template_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
+
+    def run_job():
+        try:
+            client = get_client()
+            prompt = build_template_extraction_prompt(req)
+            response = generate_with_retry(
+                client,
+                model="gemini-3.8-flash",
+                contents=[TEMPLATE_EXTRACTION_SYSTEM_PROMPT, prompt],
+            )
+            text = _strip_json_fences(response.text or "")
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                _template_jobs[job_id] = {
+                    "status": "error",
+                    "result": None,
+                    "error": f"Model did not return valid JSON: {e}. Raw (first 800 chars): {text[:800]}",
+                }
+                return
+            try:
+                parsed = ExtractedTemplate(**data)
+            except Exception as e:
+                _template_jobs[job_id] = {
+                    "status": "error",
+                    "result": None,
+                    "error": f"Model JSON did not match schema: {e}",
+                }
+                return
+            _template_jobs[job_id] = {"status": "done", "result": parsed.model_dump(), "error": None}
+        except HTTPException as e:
+            _template_jobs[job_id] = {"status": "error", "result": None, "error": str(e.detail)}
+        except Exception as e:
+            _template_jobs[job_id] = {"status": "error", "result": None, "error": f"Unexpected error: {e}"}
+
+    threading.Thread(target=run_job, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/extract-template/status/{job_id}")
+async def extract_template_status(job_id: str):
+    job = _template_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job id.")
+    return job
+
+
 
 
 class CritiqueRequest(BaseModel):

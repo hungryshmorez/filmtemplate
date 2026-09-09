@@ -2,9 +2,10 @@
 // Characters, and the Show Bible (ShowMeta) editor.
 import { useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { Hash, AtSign, Plus, Trash } from "lucide-react";
-import type { CharacterEntity, CharacterRole, SetEntity, ShowMeta } from "../types";
+import { Hash, AtSign, Library, Plus, Trash } from "lucide-react";
+import type { CharacterEntity, CharacterRole, LearnedTemplate, SetEntity, ShowMeta } from "../types";
 import { createCharacter, createSet, deleteCharacter, deleteSet, updateCharacter, updateSet, updateShow } from "../lib/actions";
+import { deleteLearnedTemplate } from "../lib/templateLearning";
 import { Button, Chip, Field, Label, Modal, Select, TextArea, TextInput } from "./ui";
 import { useConfirm } from "./ConfirmDialog";
 
@@ -429,6 +430,119 @@ export function ShowBibleModal({ open, onClose, show }: ShowBibleModalProps) {
         </Field>
         <p className="font-mono text-[10px] text-neutral-600">Changes save automatically to this browser.</p>
       </div>
+    </Modal>
+  );
+}
+
+// --- Learned Templates manager --------------------------------------------------
+// Read-only viewer for the templates the AI has stripped out of finalized
+// episodes (see lib/templateLearning.ts). Delete-only — these aren't hand-edited.
+
+interface LearnedTemplatesManagerProps {
+  open: boolean;
+  onClose: () => void;
+  templates: LearnedTemplate[];
+}
+
+export function LearnedTemplatesManager({ open, onClose, templates }: LearnedTemplatesManagerProps) {
+  const confirm = useConfirm();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) setSelectedId(null);
+    else if (!selectedId && templates.length) setSelectedId(templates[0].id);
+  }, [open, templates, selectedId]);
+
+  const selected = templates.find((t) => t.id === selectedId) ?? null;
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Learned Templates"
+      subtitle="Reusable story engines the AI stripped out of episodes you've finalized. Feed them back in from the Write Script tab in AI Script Lab."
+      wide
+    >
+      <CatalogLayout
+        list={
+          <CatalogList count={templates.length} noun={templates.length === 1 ? "template" : "templates"}>
+            {templates.length === 0 && (
+              <li className="px-2 py-3 text-[11px] leading-relaxed text-neutral-600">
+                Nothing learned yet — finalize an episode (the <Library size={10} className="inline" aria-hidden /> icon
+                on an episode row) to grow this library.
+              </li>
+            )}
+            {templates.map((t) => (
+              <li key={t.id}>
+                <div
+                  className={clsx(
+                    "group flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[12px]",
+                    t.id === selectedId ? "bg-amber-500/10 text-amber-200" : "text-neutral-300 hover:bg-neutral-800/70"
+                  )}
+                  onClick={() => setSelectedId(t.id)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{t.name}</div>
+                    <div className="truncate text-[10px] text-neutral-600">
+                      {t.genre} · from "{t.sourceEpisodeTitle}"
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Delete template ${t.name}`}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (await confirm({ message: `Delete learned template "${t.name}"? This doesn't affect the source episode.`, confirmLabel: "Delete template" })) {
+                        if (t.id === selectedId) setSelectedId(null);
+                        void deleteLearnedTemplate(t.id);
+                      }
+                    }}
+                    className="shrink-0 rounded p-1 text-neutral-500 opacity-70 transition-colors hover:bg-red-950/70 hover:text-red-400 hover:opacity-100"
+                  >
+                    <Trash size={11} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </CatalogList>
+        }
+        form={
+          selected ? (
+            <div className="space-y-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-neutral-500">
+                  {selected.format} · {selected.genre}
+                </p>
+                <h3 className="text-sm font-semibold text-amber-300">{selected.name}</h3>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium text-neutral-400">Concept</p>
+                <p className="text-[13px] leading-relaxed text-neutral-300">{selected.concept}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium text-neutral-400">Mechanics</p>
+                <p className="text-[13px] leading-relaxed text-neutral-300">{selected.mechanics}</p>
+              </div>
+              {selected.beats.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-medium text-neutral-400">Beats</p>
+                  <ol className="mt-1 space-y-1.5">
+                    {selected.beats.map((b, i) => (
+                      <li key={i} className="text-[13px] leading-relaxed text-neutral-300">
+                        <span className="font-medium text-neutral-100">{b.label}.</span> {b.description}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-[12.5px] leading-relaxed text-neutral-600">
+              Select a template on the left to see its full brief.
+            </p>
+          )
+        }
+      />
     </Modal>
   );
 }

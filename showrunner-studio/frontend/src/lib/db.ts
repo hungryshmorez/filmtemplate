@@ -6,6 +6,7 @@ import type {
   CharacterEntity,
   EpisodeEntity,
   SceneEntity,
+  LearnedTemplate,
 } from "../types";
 
 export class StudioDB extends Dexie {
@@ -14,6 +15,7 @@ export class StudioDB extends Dexie {
   characters!: EntityTable<CharacterEntity, "id">;
   episodes!: EntityTable<EpisodeEntity, "id">;
   scenes!: EntityTable<SceneEntity, "id">;
+  learnedTemplates!: EntityTable<LearnedTemplate, "id">;
 
   constructor() {
     super("showrunner-studio");
@@ -23,6 +25,14 @@ export class StudioDB extends Dexie {
       characters: "id, showId, name, role, updatedAt",
       episodes: "id, showId, order, updatedAt",
       scenes: "id, episodeId, order, targetSetId, updatedAt",
+    });
+    this.version(2).stores({
+      shows: "id, title, updatedAt",
+      sets: "id, showId, name, updatedAt",
+      characters: "id, showId, name, role, updatedAt",
+      episodes: "id, showId, order, updatedAt",
+      scenes: "id, episodeId, order, targetSetId, updatedAt",
+      learnedTemplates: "id, showId, sourceEpisodeId, genre, createdAt",
     });
   }
 }
@@ -42,21 +52,23 @@ export interface ProjectSnapshot {
   characters: CharacterEntity[];
   episodes: EpisodeEntity[];
   scenes: SceneEntity[];
+  learnedTemplates?: LearnedTemplate[];
 }
 
 export async function exportProjectSnapshot(): Promise<ProjectSnapshot> {
-  const [shows, sets, characters, episodes, scenes] = await Promise.all([
+  const [shows, sets, characters, episodes, scenes, learnedTemplates] = await Promise.all([
     db.shows.toArray(),
     db.sets.toArray(),
     db.characters.toArray(),
     db.episodes.toArray(),
     db.scenes.toArray(),
+    db.learnedTemplates.toArray(),
   ]);
-  return { version: 1, exportedAt: Date.now(), shows, sets, characters, episodes, scenes };
+  return { version: 1, exportedAt: Date.now(), shows, sets, characters, episodes, scenes, learnedTemplates };
 }
 
 export async function importProjectSnapshot(snapshot: ProjectSnapshot, mode: "merge" | "replace" = "merge") {
-  await db.transaction("rw", db.shows, db.sets, db.characters, db.episodes, db.scenes, async () => {
+  await db.transaction("rw", [db.shows, db.sets, db.characters, db.episodes, db.scenes, db.learnedTemplates], async () => {
     if (mode === "replace") {
       await Promise.all([
         db.shows.clear(),
@@ -64,6 +76,7 @@ export async function importProjectSnapshot(snapshot: ProjectSnapshot, mode: "me
         db.characters.clear(),
         db.episodes.clear(),
         db.scenes.clear(),
+        db.learnedTemplates.clear(),
       ]);
     }
     await db.shows.bulkPut(snapshot.shows);
@@ -71,5 +84,6 @@ export async function importProjectSnapshot(snapshot: ProjectSnapshot, mode: "me
     await db.characters.bulkPut(snapshot.characters);
     await db.episodes.bulkPut(snapshot.episodes);
     await db.scenes.bulkPut(snapshot.scenes);
+    if (snapshot.learnedTemplates?.length) await db.learnedTemplates.bulkPut(snapshot.learnedTemplates);
   });
 }

@@ -60,8 +60,30 @@ export interface EpisodeEntity {
   showId: string;
   title: string;
   order: number;
+  finalizedAt?: number; // set when "Finalize" strips a reusable template out of this episode
   createdAt: number;
   updatedAt: number;
+}
+
+// --- Organic template-learning library (grows from finalized episodes) ---
+
+export interface TemplateBeat {
+  label: string;
+  description: string;
+}
+
+export interface LearnedTemplate {
+  id: string;
+  showId: string;
+  sourceEpisodeId: string;
+  sourceEpisodeTitle: string;
+  genre: string;
+  name: string;
+  format: string;
+  concept: string;
+  mechanics: string;
+  beats: TemplateBeat[];
+  createdAt: number;
 }
 
 // --- Export engine types ---
