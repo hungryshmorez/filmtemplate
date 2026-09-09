@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import clsx from "clsx";
-import { Clapperboard, Plus } from "lucide-react";
+import { Clapperboard, FileStack, MonitorPlay, Plus, Video, WandSparkles } from "lucide-react";
 import { db } from "./lib/db";
 import {
   createEpisode,
@@ -21,13 +21,25 @@ import { Sidebar } from "./components/Sidebar";
 import { CritiquePanel } from "./components/CritiquePanel";
 import { useConfirm } from "./components/ConfirmDialog";
 import { SceneEditor } from "./components/SceneEditor";
-import { OutputPanel } from "./components/OutputPanel";
+import { OutputPanel, type OutputMode } from "./components/OutputPanel";
+import { EpisodePromptEngine } from "./components/EpisodePromptEngine";
 import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
 import { ImportPanel } from "./components/ImportPanel";
 import { Button, Field, Modal, TextInput } from "./components/ui";
 import { finalizeEpisode } from "./lib/templateLearning";
 
 type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | null;
+
+// Top-bar workspace modes. Episode compiles the whole episode into prompt
+// cards (center takeover); the three scene modes drive the right rail.
+type WorkspaceMode = "episode" | "showrunner" | "seedance" | "ai";
+
+const WORKSPACE_MODES: { id: WorkspaceMode; label: string; icon: typeof MonitorPlay }[] = [
+  { id: "episode", label: "Episode", icon: FileStack },
+  { id: "showrunner", label: "Showrunner", icon: MonitorPlay },
+  { id: "seedance", label: "Seedance", icon: Video },
+  { id: "ai", label: "AI Scene", icon: WandSparkles },
+];
 
 export default function App() {
   const confirm = useConfirm();
@@ -41,6 +53,13 @@ export default function App() {
   // Which single pane is visible below the lg breakpoint (desktop shows all
   // three at once). Keeps the window itself unscrollable at every width.
   const [mobilePane, setMobilePane] = useState<"tree" | "editor" | "output">("editor");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("showrunner");
+
+  const pickMode = (m: WorkspaceMode) => {
+    setWorkspaceMode(m);
+    // On narrow screens jump to the pane that actually shows the chosen mode.
+    setMobilePane(m === "episode" ? "editor" : "output");
+  };
 
   // --- Live queries -----------------------------------------------------------
   const shows = useLiveQuery(() => db.shows.orderBy("updatedAt").reverse().toArray(), [], [] as ShowMeta[]);
@@ -65,7 +84,15 @@ export default function App() {
     [] as CharacterEntity[]
   );
   const learnedTemplates = useLiveQuery(
-    () => (selectedShowId ? db.learnedTemplates.where("showId").equals(selectedShowId).reverse().sortBy("createdAt") : Promise.resolve([] as LearnedTemplate[])),
+    () =>
+      selectedShowId
+        ? db.learnedTemplates
+            .where("showId")
+            .equals(selectedShowId)
+            // sortBy always ascends; reverse the resolved array for newest-first.
+            .sortBy("createdAt")
+            .then((list) => list.reverse())
+        : Promise.resolve([] as LearnedTemplate[]),
     [selectedShowId],
     [] as LearnedTemplate[]
   );
@@ -181,14 +208,39 @@ export default function App() {
         onOpenShowBible={() => setModal("bible")}
       />
 
-      {/* Mobile pane switcher — desktop (lg+) shows tree · editor · output side by side. */}
+      {/* Workspace mode toggle — the single source of truth for the active
+          workspace (Section 2). Episode takes over the center; the other three
+          drive the right rail. */}
       {!noShows && (
-        <div role="tablist" aria-label="Panes" className="flex shrink-0 gap-1 border-b border-neutral-800 bg-neutral-900/60 p-1 lg:hidden">
-          {([
-            ["tree", "Project"],
-            ["editor", "Editor"],
-            ["output", "Output"],
-          ] as const).map(([pane, label]) => (
+        <div role="tablist" aria-label="Workspace mode" className="flex shrink-0 items-center gap-1 border-b border-neutral-800 bg-neutral-900/60 px-1.5 py-1">
+          {WORKSPACE_MODES.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={workspaceMode === id}
+              onClick={() => pickMode(id)}
+              className={clsx(
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors",
+                workspaceMode === id
+                  ? "bg-amber-500/15 text-amber-200"
+                  : "text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200"
+              )}
+            >
+              <Icon size={12} aria-hidden />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Mobile pane switcher — desktop (lg+) shows panes side by side. */}
+      {!noShows && (
+        <div role="tablist" aria-label="Panes" className="flex shrink-0 gap-1 border-b border-neutral-800 bg-neutral-900/40 p-1 lg:hidden">
+          {(workspaceMode === "episode"
+            ? ([["tree", "Project"], ["editor", "Prompts"]] as const)
+            : ([["tree", "Project"], ["editor", "Editor"], ["output", "Output"]] as const)
+          ).map(([pane, label]) => (
             <button
               key={pane}
               type="button"
@@ -257,57 +309,73 @@ export default function App() {
             finalizingEpisodeId={finalizingEpisodeId}
           />
 
-          {/* Script editor — its own independent scroll, fills the center. */}
-          <main
-            className={clsx(
-              "min-h-0 min-w-0 flex-1 overflow-y-auto border-neutral-800 lg:block lg:border-r",
-              mobilePane === "editor" ? "block" : "hidden"
-            )}
-          >
-            {scene ? (
-              <SceneEditor
-                key={scene.id}
-                scene={scene}
+          {workspaceMode === "episode" ? (
+            // Episode mode: the prompt engine takes over the full center; no rail.
+            <EpisodePromptEngine
+              className={clsx(mobilePane === "editor" ? "block" : "hidden", "lg:block")}
+              show={show}
+              episode={episode}
+              scenes={sceneList}
+              sets={setList}
+              characters={characterList}
+            />
+          ) : (
+            <>
+              {/* Script editor — its own independent scroll, fills the center. */}
+              <main
+                className={clsx(
+                  "min-h-0 min-w-0 flex-1 overflow-y-auto border-neutral-800 lg:block lg:border-r",
+                  mobilePane === "editor" ? "block" : "hidden"
+                )}
+              >
+                {scene ? (
+                  <SceneEditor
+                    key={scene.id}
+                    scene={scene}
+                    episode={episode}
+                    sets={setList}
+                    characters={characterList}
+                    onOpenSets={() => setModal("sets")}
+                    onOpenCharacters={() => setModal("characters")}
+                  />
+                ) : (
+                  <EmptyPane
+                    title={selectedEpisodeId ? "No scene selected" : "No episode selected"}
+                    body={
+                      selectedEpisodeId
+                        ? "Pick a scene from the tree, or create a new one to start writing."
+                        : "Pick or create an episode first — scenes live inside episodes."
+                    }
+                    action={
+                      selectedEpisodeId ? (
+                        <Button variant="primary" size="md" onClick={addScene}>
+                          <Plus size={13} strokeWidth={2.5} /> New scene
+                        </Button>
+                      ) : selectedShowId ? (
+                        <Button variant="primary" size="md" onClick={addEpisode}>
+                          <Plus size={13} strokeWidth={2.5} /> New episode
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                )}
+              </main>
+
+              {/* Export rail — fixed width, own independent scroll; content
+                  driven by the top-bar workspace mode. */}
+              <OutputPanel
+                mode={workspaceMode as OutputMode}
+                className={clsx(mobilePane === "output" ? "flex" : "hidden", "lg:flex")}
+                show={show}
                 episode={episode}
+                scene={scene}
+                set={set}
                 sets={setList}
                 characters={characterList}
-                onOpenSets={() => setModal("sets")}
-                onOpenCharacters={() => setModal("characters")}
+                onSceneApplied={(id) => setSelectedSceneId(id)}
               />
-            ) : (
-              <EmptyPane
-                title={selectedEpisodeId ? "No scene selected" : "No episode selected"}
-                body={
-                  selectedEpisodeId
-                    ? "Pick a scene from the tree, or create a new one to start writing."
-                    : "Pick or create an episode first — scenes live inside episodes."
-                }
-                action={
-                  selectedEpisodeId ? (
-                    <Button variant="primary" size="md" onClick={addScene}>
-                      <Plus size={13} strokeWidth={2.5} /> New scene
-                    </Button>
-                  ) : selectedShowId ? (
-                    <Button variant="primary" size="md" onClick={addEpisode}>
-                      <Plus size={13} strokeWidth={2.5} /> New episode
-                    </Button>
-                  ) : undefined
-                }
-              />
-            )}
-          </main>
-
-          {/* Export rails — fixed width, own independent scroll. */}
-          <OutputPanel
-            className={clsx(mobilePane === "output" ? "flex" : "hidden", "lg:flex")}
-            show={show}
-            episode={episode}
-            scene={scene}
-            set={set}
-            sets={setList}
-            characters={characterList}
-            onSceneApplied={(id) => setSelectedSceneId(id)}
-          />
+            </>
+          )}
         </div>
       )}
 

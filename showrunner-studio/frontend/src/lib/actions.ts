@@ -26,7 +26,7 @@ export async function updateShow(id: string, patch: Partial<Omit<ShowMeta, "id" 
 }
 
 export async function deleteShow(id: string) {
-  await db.transaction("rw", db.shows, db.episodes, db.scenes, db.sets, db.characters, async () => {
+  await db.transaction("rw", [db.shows, db.episodes, db.scenes, db.sets, db.characters, db.learnedTemplates, db.episodePromptRuns], async () => {
     const episodes = await db.episodes.where("showId").equals(id).toArray();
     for (const ep of episodes) {
       await db.scenes.where("episodeId").equals(ep.id).delete();
@@ -34,6 +34,9 @@ export async function deleteShow(id: string) {
     await db.episodes.where("showId").equals(id).delete();
     await db.sets.where("showId").equals(id).delete();
     await db.characters.where("showId").equals(id).delete();
+    // Cascade the show-scoped derived data so nothing is orphaned in IndexedDB.
+    await db.learnedTemplates.where("showId").equals(id).delete();
+    await db.episodePromptRuns.where("showId").equals(id).delete();
     await db.shows.delete(id);
   });
 }
@@ -62,8 +65,9 @@ export async function updateEpisode(id: string, patch: Partial<Omit<EpisodeEntit
 }
 
 export async function deleteEpisode(id: string) {
-  await db.transaction("rw", db.episodes, db.scenes, async () => {
+  await db.transaction("rw", db.episodes, db.scenes, db.episodePromptRuns, async () => {
     await db.scenes.where("episodeId").equals(id).delete();
+    await db.episodePromptRuns.where("episodeId").equals(id).delete();
     await db.episodes.delete(id);
   });
 }

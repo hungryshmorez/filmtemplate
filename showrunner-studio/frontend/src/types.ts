@@ -86,6 +86,39 @@ export interface LearnedTemplate {
   createdAt: number;
 }
 
+// --- Episode Prompt Engine (persisted per-scene generation prompts) ---
+// A "prompt run" is a saved snapshot of an episode compiled into per-scene,
+// copy-ready generation prompts (Showrunner or Seedance format). Runs are
+// persisted to Dexie so they survive reloads and episode switches; each card
+// can be regenerated individually from its source scene's current state.
+
+export type PromptFormat = "showrunner" | "seedance";
+
+export interface EpisodePromptCard {
+  id: string;
+  sceneId: string | null; // source scene (null if the scene was later deleted)
+  sceneName: string;
+  order: number;
+  prompt: string; // rendered copy-ready text
+  clips: number;
+  takes: number;
+  hasCastWarning: boolean;
+  hasPacingWarning: boolean;
+  generatedAt: number;
+}
+
+export interface EpisodePromptRun {
+  id: string;
+  showId: string;
+  episodeId: string;
+  episodeTitle: string;
+  format: PromptFormat;
+  aspect: AspectRatio; // used when format === "seedance"
+  cards: EpisodePromptCard[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 // --- Export engine types ---
 
 export type TransitionType =
