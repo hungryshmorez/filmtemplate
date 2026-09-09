@@ -64,7 +64,9 @@ def get_client():
     if _client is None:
         from google import genai
 
-        api_key = os.environ.get("PROJEC_GOOGLE_API_KEY")
+        # Prefer the correctly-spelled name; fall back to the historical
+        # misspelling so an already-deployed secret keeps working.
+        api_key = os.environ.get("PROJECT_GOOGLE_API_KEY") or os.environ.get("PROJEC_GOOGLE_API_KEY")
         if not api_key:
             raise HTTPException(status_code=500, detail="Gemini connector not configured.")
         _client = genai.Client(api_key=api_key)

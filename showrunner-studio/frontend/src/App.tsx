@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import clsx from "clsx";
-import { Clapperboard, FileStack, MonitorPlay, Plus, Video, WandSparkles } from "lucide-react";
+import { Clapperboard, FileStack, Film, MonitorPlay, Plus, Tv, Video, WandSparkles } from "lucide-react";
 import { db } from "./lib/db";
 import {
   createEpisode,
@@ -15,7 +15,7 @@ import {
   updateEpisode,
   updateShow,
 } from "./lib/actions";
-import type { CharacterEntity, EpisodeEntity, LearnedTemplate, SceneEntity, SetEntity, ShowMeta } from "./types";
+import type { CharacterEntity, EpisodeEntity, LearnedTemplate, SceneEntity, SetEntity, ShowKind, ShowMeta } from "./types";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { CritiquePanel } from "./components/CritiquePanel";
@@ -23,6 +23,7 @@ import { useConfirm } from "./components/ConfirmDialog";
 import { SceneEditor } from "./components/SceneEditor";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { EpisodePromptEngine } from "./components/EpisodePromptEngine";
+import { MovieWorkspace } from "./components/MovieWorkspace";
 import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
 import { ImportPanel } from "./components/ImportPanel";
 import { Button, Field, Modal, TextInput } from "./components/ui";
@@ -197,6 +198,9 @@ export default function App() {
   };
 
   const noShows = showList.length === 0;
+  // Movies are act-based, not episode/scene-based — they route to a distinct
+  // workspace and hide the TV-oriented workspace-mode bar.
+  const isMovie = (show?.kind ?? "series") === "movie";
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-neutral-950 text-neutral-200">
@@ -208,10 +212,18 @@ export default function App() {
         onOpenShowBible={() => setModal("bible")}
       />
 
+      {/* Movies are act-based: no TV workspace modes, just a type indicator. */}
+      {!noShows && isMovie && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 bg-neutral-900/60 px-3 py-1.5">
+          <Film size={12} className="text-amber-300" aria-hidden />
+          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-neutral-400">Movie — act-based structure</span>
+        </div>
+      )}
+
       {/* Workspace mode toggle — the single source of truth for the active
           workspace (Section 2). Episode takes over the center; the other three
           drive the right rail. */}
-      {!noShows && (
+      {!noShows && !isMovie && (
         <div role="tablist" aria-label="Workspace mode" className="flex shrink-0 items-center gap-1 border-b border-neutral-800 bg-neutral-900/60 px-1.5 py-1">
           {WORKSPACE_MODES.map(({ id, label, icon: Icon }) => (
             <button
@@ -237,9 +249,11 @@ export default function App() {
       {/* Mobile pane switcher — desktop (lg+) shows panes side by side. */}
       {!noShows && (
         <div role="tablist" aria-label="Panes" className="flex shrink-0 gap-1 border-b border-neutral-800 bg-neutral-900/40 p-1 lg:hidden">
-          {(workspaceMode === "episode"
-            ? ([["tree", "Project"], ["editor", "Prompts"]] as const)
-            : ([["tree", "Project"], ["editor", "Editor"], ["output", "Output"]] as const)
+          {(isMovie
+            ? ([["tree", "Project"], ["editor", "Movie"]] as const)
+            : workspaceMode === "episode"
+              ? ([["tree", "Project"], ["editor", "Prompts"]] as const)
+              : ([["tree", "Project"], ["editor", "Editor"], ["output", "Output"]] as const)
           ).map(([pane, label]) => (
             <button
               key={pane}
@@ -264,6 +278,7 @@ export default function App() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar
             className={clsx(mobilePane === "tree" ? "flex" : "hidden", "lg:flex")}
+            isMovie={isMovie}
             shows={showList}
             selectedShowId={selectedShowId}
             episodes={episodeList}
@@ -309,7 +324,13 @@ export default function App() {
             finalizingEpisodeId={finalizingEpisodeId}
           />
 
-          {workspaceMode === "episode" ? (
+          {isMovie && show ? (
+            // Movies: act-based canonical editor + derived Episode Split; no rail.
+            <MovieWorkspace
+              className={clsx(mobilePane === "editor" ? "block" : "hidden", "lg:block")}
+              show={show}
+            />
+          ) : workspaceMode === "episode" ? (
             // Episode mode: the prompt engine takes over the full center; no rail.
             <EpisodePromptEngine
               className={clsx(mobilePane === "editor" ? "block" : "hidden", "lg:block")}
@@ -383,8 +404,8 @@ export default function App() {
       <NewShowModal
         open={modal === "newShow"}
         onClose={() => setModal(null)}
-        onCreate={async (title) => {
-          const id = await createShow(title);
+        onCreate={async (title, kind) => {
+          const id = await createShow(title, kind);
           setSelectedShowId(id);
           setModal(null);
         }}
@@ -494,33 +515,63 @@ function FinalizeResultModal({ result, onClose }: { result: LearnedTemplate | nu
 
 // --- New Show modal ------------------------------------------------------------
 
-function NewShowModal({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (title: string) => void }) {
+function NewShowModal({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (title: string, kind: ShowKind) => void }) {
   const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<ShowKind>("series");
 
   useEffect(() => {
-    if (open) setTitle("");
+    if (open) {
+      setTitle("");
+      setKind("series");
+    }
   }, [open]);
 
   return (
-    <Modal open={open} onClose={onClose} title="New show" subtitle="Each show keeps its own sets, characters, episodes and scenes.">
+    <Modal open={open} onClose={onClose} title="New project" subtitle="A TV series (episodes & scenes) or a movie (act-based structure).">
       <form
-        className="space-y-3 p-4"
+        className="space-y-4 p-4"
         onSubmit={(e) => {
           e.preventDefault();
-          onCreate(title.trim() || "Untitled Show");
+          onCreate(title.trim() || (kind === "movie" ? "Untitled Movie" : "Untitled Show"), kind);
         }}
       >
+        <Field label="Type">
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ["series", "TV Series", Tv, "Episodes → Scenes"],
+              ["movie", "Movie", Film, "Acts → Beats (3-act)"],
+            ] as const).map(([k, label, Icon, sub]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setKind(k)}
+                aria-pressed={kind === k}
+                className={clsx(
+                  "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
+                  kind === k
+                    ? "border-amber-500/60 bg-amber-500/10"
+                    : "border-neutral-800 bg-neutral-900 hover:border-neutral-600"
+                )}
+              >
+                <span className={clsx("inline-flex items-center gap-1.5 text-[13px] font-semibold", kind === k ? "text-amber-200" : "text-neutral-200")}>
+                  <Icon size={14} aria-hidden /> {label}
+                </span>
+                <span className="text-[11px] text-neutral-400">{sub}</span>
+              </button>
+            ))}
+          </div>
+        </Field>
         <Field label="Title">
           <TextInput
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. SIGNAL LOST — Season 1"
-            aria-label="Show title"
+            placeholder={kind === "movie" ? "e.g. THE LAST TRANSMISSION" : "e.g. SIGNAL LOST — Season 1"}
+            aria-label="Project title"
           />
         </Field>
         <Button variant="primary" size="md" className="w-full" type="submit">
-          Create show
+          Create {kind === "movie" ? "movie" : "show"}
         </Button>
       </form>
     </Modal>

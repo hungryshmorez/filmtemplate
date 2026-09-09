@@ -35,6 +35,7 @@ interface SidebarProps {
   onFinalizeEpisode: (ep: EpisodeEntity) => void;
   finalizingEpisodeId: string | null;
   className?: string;
+  isMovie?: boolean;
 }
 
 function Section({ title, count, onAdd, addLabel, empty, children }: {
@@ -194,7 +195,7 @@ export function Sidebar(props: SidebarProps) {
     onRenameShow, onRenameEpisode,
     onOpenSets, onOpenCharacters, onOpenShowBible, onOpenImport, onOpenAiLab,
     onOpenTemplates, templateCount, onFinalizeEpisode, finalizingEpisodeId,
-    className,
+    className, isMovie,
   } = props;
 
   return (
@@ -219,49 +220,60 @@ export function Sidebar(props: SidebarProps) {
         ))}
       </Section>
 
-      <Section
-        title="Episodes"
-        count={episodes.length}
-        onAdd={selectedShowId ? onAddEpisode : undefined}
-        addLabel="New episode"
-        empty={selectedShowId ? "No episodes in this show." : "Select a show first."}
-      >
-        {episodes.map((ep) => (
-          <TreeRow
-            key={ep.id}
-            active={ep.id === selectedEpisodeId}
-            label={ep.title}
-            sub={`E${ep.order}`}
-            onSelect={() => onSelectEpisode(ep.id)}
-            onRename={(t) => onRenameEpisode(ep, t)}
-            onDelete={() => onDeleteEpisode(ep)}
-            deleteTitle="Delete episode and its scenes"
-            onFinalize={() => onFinalizeEpisode(ep)}
-            finalized={!!ep.finalizedAt}
-            finalizing={finalizingEpisodeId === ep.id}
-          />
-        ))}
-      </Section>
+      {isMovie ? (
+        <section className="border-b border-neutral-800/70 px-3 py-3">
+          <span className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-neutral-500">Structure</span>
+          <p className="mt-1 text-[11px] leading-snug text-neutral-400">
+            This is a movie — its act-based structure and the derived Episode Split live in the workspace on the right.
+          </p>
+        </section>
+      ) : (
+        <>
+          <Section
+            title="Episodes"
+            count={episodes.length}
+            onAdd={selectedShowId ? onAddEpisode : undefined}
+            addLabel="New episode"
+            empty={selectedShowId ? "No episodes in this show." : "Select a show first."}
+          >
+            {episodes.map((ep) => (
+              <TreeRow
+                key={ep.id}
+                active={ep.id === selectedEpisodeId}
+                label={ep.title}
+                sub={`E${ep.order}`}
+                onSelect={() => onSelectEpisode(ep.id)}
+                onRename={(t) => onRenameEpisode(ep, t)}
+                onDelete={() => onDeleteEpisode(ep)}
+                deleteTitle="Delete episode and its scenes"
+                onFinalize={() => onFinalizeEpisode(ep)}
+                finalized={!!ep.finalizedAt}
+                finalizing={finalizingEpisodeId === ep.id}
+              />
+            ))}
+          </Section>
 
-      <Section
-        title="Scenes"
-        count={scenes.length}
-        onAdd={selectedEpisodeId ? onAddScene : undefined}
-        addLabel="New scene"
-        empty={selectedEpisodeId ? "No scenes in this episode." : "Select an episode first."}
-      >
-        {scenes.map((sc) => (
-          <TreeRow
-            key={sc.id}
-            active={sc.id === selectedSceneId}
-            label={sc.sceneName || `Scene ${sc.order}`}
-            sub={`S${sc.order}`}
-            onSelect={() => onSelectScene(sc.id)}
-            onDelete={() => onDeleteScene(sc)}
-            deleteTitle="Delete scene"
-          />
-        ))}
-      </Section>
+          <Section
+            title="Scenes"
+            count={scenes.length}
+            onAdd={selectedEpisodeId ? onAddScene : undefined}
+            addLabel="New scene"
+            empty={selectedEpisodeId ? "No scenes in this episode." : "Select an episode first."}
+          >
+            {scenes.map((sc) => (
+              <TreeRow
+                key={sc.id}
+                active={sc.id === selectedSceneId}
+                label={sc.sceneName || `Scene ${sc.order}`}
+                sub={`S${sc.order}`}
+                onSelect={() => onSelectScene(sc.id)}
+                onDelete={() => onDeleteScene(sc)}
+                deleteTitle="Delete scene"
+              />
+            ))}
+          </Section>
+        </>
+      )}
 
       <div className="mt-auto space-y-1 border-t border-neutral-800/70 p-2">
         <span className="block px-1 pb-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-neutral-400">

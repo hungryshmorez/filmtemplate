@@ -2,11 +2,29 @@
 
 export type CharacterRole = "Protagonist" | "Antagonist" | "Supporting";
 
+// A project is either a TV series (Show -> Episodes -> Scenes) or a Movie,
+// whose canonical structure is act-based (Acts -> Beats), NOT an episode list.
+export type ShowKind = "series" | "movie";
+
+export interface MovieBeat {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface MovieAct {
+  id: string;
+  title: string;
+  beats: MovieBeat[];
+}
+
 export interface ShowMeta {
   id: string;
   title: string;
   genre: string;
   premise: string; // world rules, lore, visual style, glitch/broadcast aesthetics
+  kind?: ShowKind; // undefined is treated as "series" (back-compat with v1/v2 rows)
+  acts?: MovieAct[]; // canonical act/beat structure for movies only
   createdAt: number;
   updatedAt: number;
 }

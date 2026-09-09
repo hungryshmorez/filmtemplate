@@ -5,20 +5,37 @@ import type {
   CharacterEntity,
   DialogueLine,
   EpisodeEntity,
+  MovieAct,
   SceneEntity,
   SetEntity,
+  ShowKind,
   ShowMeta,
 } from "../types";
+import { defaultMovieActs } from "./movies";
 
 const now = () => Date.now();
 
 // --- Shows -----------------------------------------------------------------
 
-export async function createShow(title: string): Promise<string> {
+export async function createShow(title: string, kind: ShowKind = "series"): Promise<string> {
   const id = uid("show");
   const ts = now();
-  await db.shows.put({ id, title: title.trim() || "Untitled Show", genre: "", premise: "", createdAt: ts, updatedAt: ts });
+  await db.shows.put({
+    id,
+    title: title.trim() || (kind === "movie" ? "Untitled Movie" : "Untitled Show"),
+    genre: "",
+    premise: "",
+    kind,
+    // Movies start on a blank standard 3-act skeleton; series never use acts.
+    acts: kind === "movie" ? defaultMovieActs() : undefined,
+    createdAt: ts,
+    updatedAt: ts,
+  });
   return id;
+}
+
+export async function updateMovieActs(showId: string, acts: MovieAct[]) {
+  await db.shows.update(showId, { acts, updatedAt: now() });
 }
 
 export async function updateShow(id: string, patch: Partial<Omit<ShowMeta, "id" | "createdAt">>) {
