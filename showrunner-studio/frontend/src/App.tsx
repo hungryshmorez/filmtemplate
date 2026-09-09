@@ -2,6 +2,7 @@
 // three-pane layout (tree · script editor · export rails) and modals.
 import { useEffect, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import clsx from "clsx";
 import { Clapperboard, Plus } from "lucide-react";
 import { db } from "./lib/db";
 import {
@@ -37,6 +38,9 @@ export default function App() {
   const [finalizingEpisodeId, setFinalizingEpisodeId] = useState<string | null>(null);
   const [finalizeResult, setFinalizeResult] = useState<LearnedTemplate | null>(null);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  // Which single pane is visible below the lg breakpoint (desktop shows all
+  // three at once). Keeps the window itself unscrollable at every width.
+  const [mobilePane, setMobilePane] = useState<"tree" | "editor" | "output">("editor");
 
   // --- Live queries -----------------------------------------------------------
   const shows = useLiveQuery(() => db.shows.orderBy("updatedAt").reverse().toArray(), [], [] as ShowMeta[]);
@@ -177,11 +181,37 @@ export default function App() {
         onOpenShowBible={() => setModal("bible")}
       />
 
+      {/* Mobile pane switcher — desktop (lg+) shows tree · editor · output side by side. */}
+      {!noShows && (
+        <div role="tablist" aria-label="Panes" className="flex shrink-0 gap-1 border-b border-neutral-800 bg-neutral-900/60 p-1 lg:hidden">
+          {([
+            ["tree", "Project"],
+            ["editor", "Editor"],
+            ["output", "Output"],
+          ] as const).map(([pane, label]) => (
+            <button
+              key={pane}
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === pane}
+              onClick={() => setMobilePane(pane)}
+              className={clsx(
+                "flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors",
+                mobilePane === pane ? "bg-neutral-800 text-amber-200" : "text-neutral-400 hover:text-neutral-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {noShows ? (
         <WelcomeScreen onNewShow={() => setModal("newShow")} onImport={() => setModal("import")} />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar
+            className={clsx(mobilePane === "tree" ? "flex" : "hidden", "lg:flex")}
             shows={showList}
             selectedShowId={selectedShowId}
             episodes={episodeList}
@@ -227,8 +257,13 @@ export default function App() {
             finalizingEpisodeId={finalizingEpisodeId}
           />
 
-          {/* Script editor */}
-          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto border-neutral-800 lg:border-r">
+          {/* Script editor — its own independent scroll, fills the center. */}
+          <main
+            className={clsx(
+              "min-h-0 min-w-0 flex-1 overflow-y-auto border-neutral-800 lg:block lg:border-r",
+              mobilePane === "editor" ? "block" : "hidden"
+            )}
+          >
             {scene ? (
               <SceneEditor
                 key={scene.id}
@@ -262,8 +297,9 @@ export default function App() {
             )}
           </main>
 
-          {/* Export rails */}
+          {/* Export rails — fixed width, own independent scroll. */}
           <OutputPanel
+            className={clsx(mobilePane === "output" ? "flex" : "hidden", "lg:flex")}
             show={show}
             episode={episode}
             scene={scene}
@@ -457,7 +493,7 @@ function EmptyPane({ title, body, action }: { title: string; body: string; actio
     <div className="flex h-full items-center justify-center p-6">
       <div className="max-w-sm text-center">
         <p className="text-sm font-semibold text-neutral-300">{title}</p>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-600">{body}</p>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-400">{body}</p>
         {action && <div className="mt-4">{action}</div>}
       </div>
     </div>

@@ -8,6 +8,7 @@ import { uid } from "../lib/db";
 import { Button, Chip, Field, Label, Select, TextArea, TextInput } from "./ui";
 import { TaggedTextarea } from "./TaggedTextarea";
 import { useConfirm } from "./ConfirmDialog";
+import { MAX_CAST_PER_TAKE } from "../lib/showrunnerFormat";
 
 interface SceneEditorProps {
   scene: SceneEntity;
@@ -98,7 +99,7 @@ export function SceneEditor({ scene, episode, sets, characters, onOpenSets, onOp
 
         <Field label="Active characters">
           {characters.length === 0 ? (
-            <p className="text-[12px] leading-snug text-neutral-600">
+            <p className="text-[12px] leading-snug text-neutral-400">
               No characters registered yet.{" "}
               <button type="button" onClick={onOpenCharacters} className="cursor-pointer text-amber-400 underline-offset-2 hover:underline">
                 Open the Characters manager
@@ -107,35 +108,56 @@ export function SceneEditor({ scene, episode, sets, characters, onOpenSets, onOp
             </p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Active characters">
-                {characters.map((c) => {
-                  const active = scene.activeCharacterIds.includes(c.id);
-                  return (
-                    <label
-                      key={c.id}
-                      className={clsx(
-                        "flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] transition-colors",
-                        active
-                          ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
-                          : "border-neutral-800 bg-neutral-900 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+              {/* Seedance/Showrunner lock a take to at most 3 characters. Prevent
+                  over-selecting up front instead of silently dropping the overflow. */}
+              {(() => {
+                const atLimit = scene.activeCharacterIds.length >= MAX_CAST_PER_TAKE;
+                return (
+                  <>
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Active characters">
+                      {characters.map((c) => {
+                        const active = scene.activeCharacterIds.includes(c.id);
+                        const disabled = !active && atLimit;
+                        return (
+                          <label
+                            key={c.id}
+                            title={disabled ? `Take limit reached (${MAX_CAST_PER_TAKE}/${MAX_CAST_PER_TAKE} characters)` : undefined}
+                            className={clsx(
+                              "flex items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] transition-colors",
+                              active
+                                ? "cursor-pointer border-amber-500/50 bg-amber-500/10 text-amber-200"
+                                : disabled
+                                  ? "cursor-not-allowed border-neutral-800/60 bg-neutral-900/40 text-neutral-600 opacity-60"
+                                  : "cursor-pointer border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-600 hover:text-neutral-300"
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={active}
+                              disabled={disabled}
+                              onChange={() => !disabled && toggleCharacter(c.id)}
+                            />
+                            <span className="font-mono text-[10px] text-amber-400/80">@</span>
+                            {c.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="subtle" size="xs" onClick={onOpenCharacters}>
+                        <Plus size={11} />
+                        Manage characters
+                      </Button>
+                      {atLimit && (
+                        <Chip tone="amber" title="A take generates at most 3 characters at once.">
+                          Take limit reached ({scene.activeCharacterIds.length}/{MAX_CAST_PER_TAKE} characters)
+                        </Chip>
                       )}
-                    >
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={active}
-                        onChange={() => toggleCharacter(c.id)}
-                      />
-                      <span className="font-mono text-[10px] text-amber-400/80">@</span>
-                      {c.name}
-                    </label>
-                  );
-                })}
-              </div>
-              <Button variant="subtle" size="xs" className="self-start" onClick={onOpenCharacters}>
-                <Plus size={11} />
-                Manage characters
-              </Button>
+                    </div>
+                  </>
+                );
+              })()}
             </>
           )}
         </Field>
@@ -170,7 +192,7 @@ export function SceneEditor({ scene, episode, sets, characters, onOpenSets, onOp
           </Button>
         </div>
         {scene.dialogue.length === 0 ? (
-          <p className="rounded-md border border-dashed border-neutral-800 px-3 py-2.5 text-[12px] text-neutral-600">
+          <p className="rounded-md border border-dashed border-neutral-800 px-3 py-2.5 text-[12px] text-neutral-400">
             No dialogue yet. Added lines are attached to the final shot of the Seedance batch and rendered as
             “@Name: “line”” blocks in Showrunner format.
           </p>

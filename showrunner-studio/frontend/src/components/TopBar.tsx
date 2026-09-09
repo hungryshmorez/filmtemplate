@@ -105,7 +105,7 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }
           target="_blank"
           rel="noreferrer"
           title="Open the old Script Studio prototype (archived, no longer maintained)"
-          className="hidden shrink-0 rounded-md px-2 py-1 text-[11px] text-neutral-600 transition-colors hover:bg-neutral-900 hover:text-neutral-400 sm:inline-block"
+          className="hidden shrink-0 rounded-md px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:bg-neutral-900 hover:text-neutral-400 sm:inline-block"
         >
           Old version
         </a>
@@ -153,7 +153,7 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }
               Replace everything
             </Button>
           </div>
-          <p className="text-[11px] leading-snug text-neutral-600">
+          <p className="text-[11px] leading-snug text-neutral-400">
             Merge keeps existing data and overwrites entries with the same ids. Replace wipes the local
             database first — export a backup if unsure.
           </p>

@@ -34,6 +34,7 @@ interface SidebarProps {
   templateCount: number;
   onFinalizeEpisode: (ep: EpisodeEntity) => void;
   finalizingEpisodeId: string | null;
+  className?: string;
 }
 
 function Section({ title, count, onAdd, addLabel, empty, children }: {
@@ -48,7 +49,7 @@ function Section({ title, count, onAdd, addLabel, empty, children }: {
     <section className="border-b border-neutral-800/70 py-2">
       <div className="flex items-center justify-between px-3 pb-1">
         <span className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-neutral-500">
-          {title} <span className="text-neutral-700">({count})</span>
+          {title} <span className="text-neutral-500">({count})</span>
         </span>
         {onAdd && (
           <button
@@ -56,13 +57,13 @@ function Section({ title, count, onAdd, addLabel, empty, children }: {
             onClick={onAdd}
             title={addLabel ?? `Add ${title}`}
             aria-label={addLabel ?? `Add ${title}`}
-            className="rounded p-0.5 text-neutral-600 transition-colors hover:bg-neutral-800 hover:text-amber-400"
+            className="rounded p-0.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-amber-400"
           >
             <Plus size={13} />
           </button>
         )}
       </div>
-      {count === 0 && empty && <p className="px-3 pb-1 text-[11px] leading-snug text-neutral-700">{empty}</p>}
+      {count === 0 && empty && <p className="px-3 pb-1 text-[11px] leading-snug text-neutral-500">{empty}</p>}
       <ul className="space-y-px px-1.5">{children}</ul>
     </section>
   );
@@ -119,12 +120,12 @@ function TreeRow({ active, label, sub, onSelect, onDelete, deleteTitle, onRename
       <ChevronRight
         size={11}
         aria-hidden
-        className={clsx("shrink-0 transition-colors", active ? "text-amber-400" : "text-neutral-700")}
+        className={clsx("shrink-0 transition-colors", active ? "text-amber-400" : "text-neutral-500")}
       />
       <button type="button" className="min-w-0 flex-1 cursor-pointer truncate text-left" onClick={onSelect}>
         {label}
       </button>
-      {sub && <span className="shrink-0 font-mono text-[9px] text-neutral-600">{sub}</span>}
+      {sub && <span className="shrink-0 font-mono text-[9px] text-neutral-400">{sub}</span>}
       {onFinalize && (
         <button
           type="button"
@@ -193,12 +194,16 @@ export function Sidebar(props: SidebarProps) {
     onRenameShow, onRenameEpisode,
     onOpenSets, onOpenCharacters, onOpenShowBible, onOpenImport, onOpenAiLab,
     onOpenTemplates, templateCount, onFinalizeEpisode, finalizingEpisodeId,
+    className,
   } = props;
 
   return (
     <nav
       aria-label="Project tree"
-      className="flex w-52 shrink-0 flex-col overflow-y-auto border-neutral-800 bg-neutral-900/40 md:w-60 lg:border-r"
+      className={clsx(
+        "h-full w-full flex-col overflow-y-auto border-neutral-800 bg-neutral-900/40 lg:w-72 lg:shrink-0 lg:border-r",
+        className
+      )}
     >
       <Section title="Shows" count={shows.length} onAdd={onAddShow} addLabel="New show" empty="No shows yet.">
         {shows.map((s) => (
@@ -259,7 +264,7 @@ export function Sidebar(props: SidebarProps) {
       </Section>
 
       <div className="mt-auto space-y-1 border-t border-neutral-800/70 p-2">
-        <span className="block px-1 pb-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-neutral-600">
+        <span className="block px-1 pb-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-neutral-400">
           Catalog
         </span>
         <Button variant="subtle" size="md" className="w-full justify-start" onClick={onOpenSets}>

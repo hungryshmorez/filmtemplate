@@ -11,18 +11,22 @@ import { useConfirm } from "./ConfirmDialog";
 
 // --- Shared bits --------------------------------------------------------------
 
+// Responsive 40% list / 60% detail split. On desktop the row is a fixed
+// height so the list and the form each scroll independently and smoothly.
 function CatalogLayout({ list, form }: { list: ReactNode; form: ReactNode }) {
   return (
-    <div className="flex flex-col sm:flex-row">
-      <div className="shrink-0 border-b border-neutral-800 sm:w-56 sm:border-b-0 sm:border-r">{list}</div>
-      <div className="min-w-0 flex-1 p-4">{form}</div>
+    <div className="flex min-h-0 flex-col sm:h-[70vh] sm:flex-row">
+      <div className="flex min-h-0 shrink-0 flex-col border-b border-neutral-800 sm:w-2/5 sm:border-b-0 sm:border-r">
+        {list}
+      </div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:w-3/5">{form}</div>
     </div>
   );
 }
 
 function CatalogList({ count, noun, children }: { count: number; noun: string; children: ReactNode }) {
   return (
-    <div className="flex h-full max-h-52 flex-col sm:max-h-none">
+    <div className="flex h-full max-h-56 min-h-0 flex-col sm:max-h-none">
       <div className="flex items-center justify-between px-3 py-2.5">
         <Label>
           {count} {noun}
@@ -103,7 +107,7 @@ export function SetsManager({ open, onClose, showId, sets }: SetsManagerProps) {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{s.name}</div>
-                    <div className="truncate text-[10px] text-neutral-600">{s.timeOfDay || "—"}</div>
+                    <div className="truncate text-[10px] text-neutral-400">{s.timeOfDay || "—"}</div>
                   </div>
                   <button
                     type="button"
@@ -271,7 +275,7 @@ export function CharactersManager({ open, onClose, showId, characters }: Charact
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{c.name}</div>
-                    <div className="truncate text-[10px] text-neutral-600">{c.role}</div>
+                    <div className="truncate text-[10px] text-neutral-400">{c.role}</div>
                   </div>
                   <button
                     type="button"
@@ -428,7 +432,7 @@ export function ShowBibleModal({ open, onClose, show }: ShowBibleModalProps) {
             aria-label="Show premise"
           />
         </Field>
-        <p className="font-mono text-[10px] text-neutral-600">Changes save automatically to this browser.</p>
+        <p className="font-mono text-[10px] text-neutral-400">Changes save automatically to this browser.</p>
       </div>
     </Modal>
   );
@@ -467,7 +471,7 @@ export function LearnedTemplatesManager({ open, onClose, templates }: LearnedTem
         list={
           <CatalogList count={templates.length} noun={templates.length === 1 ? "template" : "templates"}>
             {templates.length === 0 && (
-              <li className="px-2 py-3 text-[11px] leading-relaxed text-neutral-600">
+              <li className="px-2 py-3 text-[11px] leading-relaxed text-neutral-400">
                 Nothing learned yet — finalize an episode (the <Library size={10} className="inline" aria-hidden /> icon
                 on an episode row) to grow this library.
               </li>
@@ -483,7 +487,7 @@ export function LearnedTemplatesManager({ open, onClose, templates }: LearnedTem
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{t.name}</div>
-                    <div className="truncate text-[10px] text-neutral-600">
+                    <div className="truncate text-[10px] text-neutral-400">
                       {t.genre} · from "{t.sourceEpisodeTitle}"
                     </div>
                   </div>
@@ -537,7 +541,7 @@ export function LearnedTemplatesManager({ open, onClose, templates }: LearnedTem
               )}
             </div>
           ) : (
-            <p className="text-[12.5px] leading-relaxed text-neutral-600">
+            <p className="text-[12.5px] leading-relaxed text-neutral-400">
               Select a template on the left to see its full brief.
             </p>
           )

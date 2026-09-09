@@ -199,14 +199,14 @@ function SectionHeader({
     <div className="flex items-center gap-2 pb-1.5">
       <Icon size={12} className="shrink-0 text-amber-400/80" aria-hidden />
       <Label>
-        {title} <span className="text-neutral-700">({count})</span>
+        {title} <span className="text-neutral-500">({count})</span>
       </Label>
       <div className="ml-auto flex gap-2">
         {onAll && (
           <button
             type="button"
             onClick={onAll}
-            className="font-mono text-[10px] text-neutral-600 transition-colors hover:text-amber-300"
+            className="font-mono text-[10px] text-neutral-400 transition-colors hover:text-amber-300"
           >
             all
           </button>
@@ -215,7 +215,7 @@ function SectionHeader({
           <button
             type="button"
             onClick={onNone}
-            className="font-mono text-[10px] text-neutral-600 transition-colors hover:text-amber-300"
+            className="font-mono text-[10px] text-neutral-400 transition-colors hover:text-amber-300"
           >
             none
           </button>
@@ -227,7 +227,7 @@ function SectionHeader({
 
 function EmptyHint({ children }: { children: string }) {
   return (
-    <p className="rounded-md border border-dashed border-neutral-800 px-2.5 py-2 text-[11.5px] leading-snug text-neutral-600">
+    <p className="rounded-md border border-dashed border-neutral-800 px-2.5 py-2 text-[11.5px] leading-snug text-neutral-400">
       {children}
     </p>
   );
@@ -262,20 +262,20 @@ function SetRow({
         >
           <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-neutral-200">
             <Hash size={11} className="shrink-0 text-amber-400/70" aria-hidden />
-            <span className={clsx("truncate", !row.name.trim() && "italic text-neutral-600")}>
+            <span className={clsx("truncate", !row.name.trim() && "italic text-neutral-400")}>
               {row.name.trim() || "unnamed set"}
             </span>
           </span>
         </button>
         <ExistsBadge exists={exists} noun="set" />
         {row.time_of_day.trim() && (
-          <span className="hidden shrink-0 font-mono text-[10px] text-neutral-600 sm:inline">{row.time_of_day}</span>
+          <span className="hidden shrink-0 font-mono text-[10px] text-neutral-400 sm:inline">{row.time_of_day}</span>
         )}
         <button
           type="button"
           aria-label={row.expanded ? `Collapse set ${row.name}` : `Edit set ${row.name}`}
           onClick={() => onPatch(index, { expanded: !row.expanded })}
-          className="shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:text-amber-300"
+          className="shrink-0 rounded p-0.5 text-neutral-400 transition-colors hover:text-amber-300"
         >
           {row.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
@@ -342,18 +342,18 @@ function CharacterRow({
         >
           <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-neutral-200">
             <AtSign size={11} className="shrink-0 text-amber-400/70" aria-hidden />
-            <span className={clsx("truncate", !row.name.trim() && "italic text-neutral-600")}>
+            <span className={clsx("truncate", !row.name.trim() && "italic text-neutral-400")}>
               {row.name.trim() || "unnamed character"}
             </span>
           </span>
         </button>
         <ExistsBadge exists={exists} noun="character" />
-        <span className="hidden shrink-0 font-mono text-[10px] text-neutral-600 sm:inline">{row.role}</span>
+        <span className="hidden shrink-0 font-mono text-[10px] text-neutral-400 sm:inline">{row.role}</span>
         <button
           type="button"
           aria-label={row.expanded ? `Collapse character ${row.name}` : `Edit character ${row.name}`}
           onClick={() => onPatch(index, { expanded: !row.expanded })}
-          className="shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:text-amber-300"
+          className="shrink-0 rounded p-0.5 text-neutral-400 transition-colors hover:text-amber-300"
         >
           {row.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
@@ -448,7 +448,7 @@ function SceneRow({
           onClick={() => onPatch(episodeIndex, sceneIndex, { expanded: !scene.expanded })}
           aria-expanded={scene.expanded}
         >
-          <span className={clsx("truncate text-[12px] text-neutral-300", !scene.scene_name.trim() && "italic text-neutral-600")}>
+          <span className={clsx("truncate text-[12px] text-neutral-300", !scene.scene_name.trim() && "italic text-neutral-400")}>
             {scene.scene_name.trim() || `Scene ${sceneIndex + 1}`}
           </span>
         </button>
@@ -470,7 +470,7 @@ function SceneRow({
           type="button"
           aria-label={scene.expanded ? `Collapse scene ${scene.scene_name}` : `Inspect scene ${scene.scene_name}`}
           onClick={() => onPatch(episodeIndex, sceneIndex, { expanded: !scene.expanded })}
-          className="shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:text-amber-300"
+          className="shrink-0 rounded p-0.5 text-neutral-400 transition-colors hover:text-amber-300"
         >
           {scene.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
@@ -519,12 +519,12 @@ function SceneRow({
                 {scene.dialogue.slice(0, 6).map((d, i) => (
                   <li key={i} className="text-[11.5px] leading-snug text-neutral-400">
                     <span className="font-mono text-amber-300/90">@{d.character_name}</span>
-                    {d.parenthetical ? <span className="italic text-neutral-600"> ({d.parenthetical})</span> : null}
+                    {d.parenthetical ? <span className="italic text-neutral-400"> ({d.parenthetical})</span> : null}
                     <span>: “{d.text.length > 90 ? `${d.text.slice(0, 90)}…` : d.text}”</span>
                   </li>
                 ))}
                 {scene.dialogue.length > 6 && (
-                  <li className="text-[11px] text-neutral-600">+{scene.dialogue.length - 6} more lines…</li>
+                  <li className="text-[11px] text-neutral-400">+{scene.dialogue.length - 6} more lines…</li>
                 )}
               </ul>
             </div>
@@ -576,7 +576,7 @@ function EpisodeBlock({
           aria-expanded={episode.expanded}
         >
           <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-neutral-200">
-            <span className={clsx("truncate", !episode.title.trim() && "italic text-neutral-600")}>
+            <span className={clsx("truncate", !episode.title.trim() && "italic text-neutral-400")}>
               {episode.title.trim() || "Untitled episode"}
             </span>
             <Chip tone={episode.scenes.length > 0 ? "default" : "dim"}>
@@ -588,7 +588,7 @@ function EpisodeBlock({
           type="button"
           aria-label={episode.expanded ? `Collapse episode ${episode.title}` : `Expand episode ${episode.title}`}
           onClick={() => onPatchEpisode(episodeIndex, { expanded: !episode.expanded })}
-          className="shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:text-amber-300"
+          className="shrink-0 rounded p-0.5 text-neutral-400 transition-colors hover:text-amber-300"
         >
           {episode.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
@@ -596,7 +596,7 @@ function EpisodeBlock({
       {episode.expanded && (
         <div className="border-t border-neutral-800/70 bg-neutral-900/20">
           {episode.scenes.length === 0 ? (
-            <p className="px-3 py-2 text-[11.5px] text-neutral-600">No scenes were detected in this episode.</p>
+            <p className="px-3 py-2 text-[11.5px] text-neutral-400">No scenes were detected in this episode.</p>
           ) : (
             <ul className="divide-y divide-neutral-800/60">
               {episode.scenes.map((sc, sIdx) => (
@@ -1125,7 +1125,7 @@ export function ImportPanel({ open, onClose, show, sets, characters, onImported 
               if (!busy) addFiles(e.dataTransfer.files);
             }}
           >
-            <FileUp size={28} className={clsx("mx-auto", dragOver ? "text-amber-300" : "text-neutral-600")} aria-hidden />
+            <FileUp size={28} className={clsx("mx-auto", dragOver ? "text-amber-300" : "text-neutral-400")} aria-hidden />
             <p className="mt-2 text-[13px] font-medium text-neutral-200">Drop Show Bible / script files here</p>
             <p className="mt-1 text-[11.5px] text-neutral-500">.txt, .md, .pdf or .docx — multiple files welcome</p>
             <Button variant="ghost" size="md" className="mt-3" onClick={() => fileInputRef.current?.click()} disabled={busy}>
@@ -1158,13 +1158,13 @@ export function ImportPanel({ open, onClose, show, sets, characters, onImported 
                   >
                     <FileText size={13} className="shrink-0 text-amber-400/70" aria-hidden />
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-neutral-200">{f.name}</span>
-                    <span className="shrink-0 font-mono text-[10px] text-neutral-600">{formatBytes(f.size)}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-neutral-400">{formatBytes(f.size)}</span>
                     <button
                       type="button"
                       aria-label={`Remove ${f.name}`}
                       onClick={() => removeFile(i)}
                       disabled={busy}
-                      className="shrink-0 rounded p-0.5 text-neutral-600 transition-colors hover:text-red-400 disabled:opacity-40"
+                      className="shrink-0 rounded p-0.5 text-neutral-400 transition-colors hover:text-red-400 disabled:opacity-40"
                     >
                       <X size={13} />
                     </button>
@@ -1174,7 +1174,7 @@ export function ImportPanel({ open, onClose, show, sets, characters, onImported 
             </div>
           )}
 
-          <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-neutral-600">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-neutral-400">
             <div className="h-px flex-1 bg-neutral-800" />
             <span>or paste text</span>
             <div className="h-px flex-1 bg-neutral-800" />
@@ -1241,7 +1241,7 @@ export function ImportPanel({ open, onClose, show, sets, characters, onImported 
               </Button>
             )}
           </div>
-          <p className="text-center text-[11px] leading-snug text-neutral-600">
+          <p className="text-center text-[11px] leading-snug text-neutral-400">
             Documents are sent to the local API for text extraction, then broken down by AI. You review everything before it
             touches your library.
           </p>

@@ -8,7 +8,10 @@
 html,
 body,
 #root {
-  height: 100%;
+  height: 100vh;
+  /* Lock the root viewport — the window itself must never scroll; every
+     scrollable region (sidebar, workspace, output rail) owns its own scroll. */
+  overflow: hidden;
 }
 
 body {

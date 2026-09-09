@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { MonitorPlay, Video, WandSparkles } from "lucide-react";
+// (className plumbed from App for responsive show/hide + fixed rail width)
 import type { CharacterEntity, EpisodeEntity, SceneEntity, SetEntity, ShowMeta } from "../types";import { ShowrunnerPanel } from "./ShowrunnerPanel";
 import { SeedancePanel } from "./SeedancePanel";
 import { AiScenePanel } from "./AiScenePanel";
@@ -23,13 +24,19 @@ interface OutputPanelProps {
   sets: SetEntity[];
   characters: CharacterEntity[];
   onSceneApplied: (sceneId: string) => void;
+  className?: string;
 }
 
-export function OutputPanel({ show, episode, scene, set, sets, characters, onSceneApplied }: OutputPanelProps) {
+export function OutputPanel({ show, episode, scene, set, sets, characters, onSceneApplied, className }: OutputPanelProps) {
   const [tab, setTab] = useState<Tab>("showrunner");
 
   return (
-    <aside className="flex min-h-0 shrink-0 flex-col border-neutral-800 bg-neutral-900/30 lg:border-l">
+    <aside
+      className={clsx(
+        "h-full w-full min-h-0 flex-col border-neutral-800 bg-neutral-900/30 lg:w-[360px] lg:shrink-0 lg:border-l",
+        className
+      )}
+    >
       {/* Tabs */}
       <div
         role="tablist"

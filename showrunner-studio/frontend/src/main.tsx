@@ -3,11 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { ConfirmProvider } from './components/ConfirmDialog.tsx'
+import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfirmProvider>
-      <App />
-    </ConfirmProvider>
+    <ErrorBoundary>
+      <ConfirmProvider>
+        <App />
+      </ConfirmProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )
