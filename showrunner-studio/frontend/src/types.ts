@@ -110,11 +110,26 @@ export interface LearnedTemplate {
 // persisted to Dexie so they survive reloads and episode switches; each card
 // can be regenerated individually from its source scene's current state.
 
-export type PromptFormat = "showrunner" | "seedance";
+// "reference" = the AI Broadcast Prompt format: one self-contained 15-second
+// prompt (Scene / Dialogue / Action) with camera + transition + DNA detail
+// folded in. "showrunner"/"seedance" are the deterministic per-scene exports.
+export type PromptFormat = "reference" | "showrunner" | "seedance";
+
+export interface ReferenceDialogueLine {
+  character: string;
+  delivery: string;
+  line: string;
+}
+
+export interface ReferencePrompt {
+  scene: string;
+  dialogue: ReferenceDialogueLine[];
+  action: string;
+}
 
 export interface EpisodePromptCard {
   id: string;
-  sceneId: string | null; // source scene (null if the scene was later deleted)
+  sceneId: string | null; // source scene (null for reference-format / deleted scene)
   sceneName: string;
   order: number;
   prompt: string; // rendered copy-ready text
@@ -122,8 +137,11 @@ export interface EpisodePromptCard {
   takes: number;
   hasCastWarning: boolean;
   hasPacingWarning: boolean;
+  reference?: ReferencePrompt; // structured content when format === "reference"
   generatedAt: number;
 }
+
+export type EpisodeLength = "short" | "medium" | "large";
 
 export interface EpisodePromptRun {
   id: string;
@@ -132,6 +150,8 @@ export interface EpisodePromptRun {
   episodeTitle: string;
   format: PromptFormat;
   aspect: AspectRatio; // used when format === "seedance"
+  length?: EpisodeLength; // reference format only
+  free?: boolean; // reference format: generated without a length cap
   cards: EpisodePromptCard[];
   createdAt: number;
   updatedAt: number;

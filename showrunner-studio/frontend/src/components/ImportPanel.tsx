@@ -23,6 +23,7 @@ import {
 import clsx from "clsx";
 import type { CharacterEntity, CharacterRole, DialogueLine, SetEntity, ShowMeta } from "../types";
 import { db, uid } from "../lib/db";
+import { toProviderConfig } from "../lib/providerSettings";
 import { Button, Chip, Field, Label, Modal, Select, Spinner, TextArea, TextInput } from "./ui";
 
 // --- Backend response shapes (mirrors backend/main.py) ----------------------
@@ -784,6 +785,7 @@ export function ImportPanel({ open, onClose, show, sets, characters, onImported 
             set_names: sets.map((s) => s.name),
             character_names: characters.map((c) => c.name),
           },
+          provider: toProviderConfig(),
         }),
       });
       if (!startRes.ok) {

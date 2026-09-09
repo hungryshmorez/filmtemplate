@@ -3,6 +3,7 @@
 // AI, and grow the persistent LearnedTemplate library in Dexie.
 import { db, uid } from "./db";
 import { updateEpisode } from "./actions";
+import { toProviderConfig } from "./providerSettings";
 import type { CharacterEntity, EpisodeEntity, LearnedTemplate, SceneEntity, SetEntity } from "../types";
 
 // Build the full episode script text (scene action + dialogue, character and
@@ -79,7 +80,7 @@ export async function finalizeEpisode(
   const startRes = await fetch("/api/extract-template/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ episodeTitle: episode.title, genre, episodeText }),
+    body: JSON.stringify({ episodeTitle: episode.title, genre, episodeText, provider: toProviderConfig() }),
   });
   if (!startRes.ok) {
     const detail = await startRes.json().catch(() => ({}));

@@ -14,6 +14,7 @@ import {
   type Genre,
 } from "../lib/storyTemplates";
 import { renderLearnedTemplateBrief } from "../lib/templateLearning";
+import { toProviderConfig } from "../lib/providerSettings";
 import type { LearnedTemplate } from "../types";
 
 type LabKind = "critique" | "write" | "rewrite";
@@ -132,7 +133,7 @@ export function CritiquePanel({
     const startRes = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, provider: toProviderConfig() }),
     });
     if (!startRes.ok) {
       const detail = await startRes.json().catch(() => ({}));

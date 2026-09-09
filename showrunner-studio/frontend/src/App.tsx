@@ -26,10 +26,11 @@ import { EpisodePromptEngine } from "./components/EpisodePromptEngine";
 import { MovieWorkspace } from "./components/MovieWorkspace";
 import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
 import { ImportPanel } from "./components/ImportPanel";
+import { SettingsModal } from "./components/SettingsModal";
 import { Button, Field, Modal, TextInput } from "./components/ui";
 import { finalizeEpisode } from "./lib/templateLearning";
 
-type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | null;
+type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | null;
 
 // Top-bar workspace modes. Episode compiles the whole episode into prompt
 // cards (center takeover); the three scene modes drive the right rail.
@@ -210,6 +211,7 @@ export default function App() {
         onSelectShow={setSelectedShowId}
         onNewShow={() => setModal("newShow")}
         onOpenShowBible={() => setModal("bible")}
+        onOpenSettings={() => setModal("settings")}
       />
 
       {/* Movies are act-based: no TV workspace modes, just a type indicator. */}
@@ -431,6 +433,7 @@ export default function App() {
           />
         </>
       )}
+      <SettingsModal open={modal === "settings"} onClose={() => setModal(null)} />
       <ShowBibleModal open={modal === "bible"} onClose={() => setModal(null)} show={show} />
       <CritiquePanel
         open={modal === "ailab"}

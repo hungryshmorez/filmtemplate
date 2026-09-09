@@ -7,6 +7,7 @@ import type { CharacterEntity, CharacterRole, EpisodeEntity, SceneEntity, SetEnt
 import { createScene, updateScene } from "../lib/actions";
 import { uid } from "../lib/db";
 import { MAX_CAST_PER_TAKE } from "../lib/showrunnerFormat";
+import { toProviderConfig } from "../lib/providerSettings";
 import { Button, Chip, Field, Label, Select, Spinner, TextArea, TextInput } from "./ui";
 
 // @character chips are clustered by role so a big cast stays scannable.
@@ -117,6 +118,7 @@ export function AiScenePanel({ show, episode, scene, sets, characters, onApplied
           })),
           scene_concept: concept.trim(),
           episode_title: episode?.title ?? "",
+          provider: toProviderConfig(),
         }),
       });
       if (!res.ok) {
