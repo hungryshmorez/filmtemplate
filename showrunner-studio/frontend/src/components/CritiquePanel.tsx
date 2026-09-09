@@ -78,12 +78,27 @@ export function CritiquePanel({
   const [templateGenre, setTemplateGenre] = useState<Genre>(GENRES[0]);
   const [filmTemplateName, setFilmTemplateName] = useState<string>("");
   const [learnedTemplateId, setLearnedTemplateId] = useState<string>("");
+  const [learnedAllGenres, setLearnedAllGenres] = useState(false);
 
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const outputRef = useRef<HTMLDivElement | null>(null);
+
+  // Recursive write -> critique -> rewrite loop (Write tab).
+  const [loopStage, setLoopStage] = useState<"idle" | "writing" | "critiquing" | "rewriting">("idle");
+  const [loopCritique, setLoopCritique] = useState<string | null>(null);
+  const [passes, setPasses] = useState(1);
+
+  // Learned templates offered as Write-Script scaffolding, filtered to the
+  // selected genre alongside the standard templates (Section 4).
+  const learnedForGenre = learnedAllGenres
+    ? learnedTemplates
+    : learnedTemplates.filter((t) => t.genre === templateGenre);
+  const effectiveLearnedId = learnedForGenre.some((t) => t.id === learnedTemplateId)
+    ? learnedTemplateId
+    : learnedForGenre[0]?.id ?? "";
 
   // Pre-fill text areas from the project the first time the panel opens.
   const [seeded, setSeeded] = useState(false);
@@ -111,22 +126,28 @@ export function CritiquePanel({
 
   if (!open) return null;
 
+  // Start one background job and resolve its text (used by both the single-tab
+  // runs and the recursive loop).
+  const startAndPoll = async (endpoint: string, body: Record<string, unknown>): Promise<string> => {
+    const startRes = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!startRes.ok) {
+      const detail = await startRes.json().catch(() => ({}));
+      throw new Error(detail?.detail || `Request failed (${startRes.status})`);
+    }
+    const { job_id } = await startRes.json();
+    return pollJob(job_id);
+  };
+
   const run = async (endpoint: string, body: Record<string, unknown>) => {
     setRunning(true);
     setError(null);
     setOutput(null);
     try {
-      const startRes = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!startRes.ok) {
-        const detail = await startRes.json().catch(() => ({}));
-        throw new Error(detail?.detail || `Request failed (${startRes.status})`);
-      }
-      const { job_id } = await startRes.json();
-      const text = await pollJob(job_id);
+      const text = await startAndPoll(endpoint, body);
       setOutput(text);
       requestAnimationFrame(() => outputRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e) {
@@ -136,35 +157,41 @@ export function CritiquePanel({
     }
   };
 
+  // --- Write-Script request builders (shared by single-run and the loop) ---
+  const buildTemplateBrief = (): string => {
+    if (templateFormat === "tv") return renderTvEngineBrief(getTvEngine(templateGenre)!);
+    if (templateFormat === "film") return renderFilmTemplateBrief(getFilmSuite(templateGenre)!, filmTemplateName || undefined);
+    if (templateFormat === "learned") {
+      const t = learnedTemplates.find((lt) => lt.id === effectiveLearnedId);
+      return t ? renderLearnedTemplateBrief(t) : "";
+    }
+    return "";
+  };
+
+  const resolveWriteGenre = (): string | null =>
+    (templateFormat === "learned"
+      ? learnedTemplates.find((lt) => lt.id === effectiveLearnedId)?.genre
+      : templateFormat !== "none"
+        ? templateGenre
+        : showGenre) || null;
+
+  const buildWriteBody = () => {
+    const combinedBible = [buildTemplateBrief(), bibleText.trim()].filter(Boolean).join("\n\n---\n\n");
+    return {
+      idea,
+      showBible: combinedBible || null,
+      genre: resolveWriteGenre(),
+      targetLength,
+    };
+  };
+
   const submit = () => {
     if (kind === "critique") {
       if (!critiqueText.trim()) return;
       void run("/api/critique/start", { text: critiqueText, showTitle, genre: showGenre });
     } else if (kind === "write") {
       if (!idea.trim()) return;
-      const templateBrief =
-        templateFormat === "tv"
-          ? renderTvEngineBrief(getTvEngine(templateGenre)!)
-          : templateFormat === "film"
-            ? renderFilmTemplateBrief(getFilmSuite(templateGenre)!, filmTemplateName || undefined)
-            : templateFormat === "learned"
-              ? (() => {
-                  const t = learnedTemplates.find((lt) => lt.id === learnedTemplateId);
-                  return t ? renderLearnedTemplateBrief(t) : "";
-                })()
-              : "";
-      const combinedBible = [templateBrief, bibleText.trim()].filter(Boolean).join("\n\n---\n\n");
-      void run("/api/write-script/start", {
-        idea,
-        showBible: combinedBible || null,
-        genre:
-          (templateFormat === "learned"
-            ? learnedTemplates.find((lt) => lt.id === learnedTemplateId)?.genre
-            : templateFormat !== "none"
-              ? templateGenre
-              : showGenre) || null,
-        targetLength,
-      });
+      void run("/api/write-script/start", buildWriteBody());
     } else {
       if (!rewriteScript.trim()) return;
       void run("/api/rewrite/start", {
@@ -172,6 +199,42 @@ export function CritiquePanel({
         notes: rewriteNotes.trim() || null,
         genre: showGenre || null,
       });
+    }
+  };
+
+  // --- Recursive loop: write -> (critique -> rewrite) x passes -> polished ---
+  const runLoop = async () => {
+    if (!idea.trim() || running) return;
+    const genre = resolveWriteGenre();
+    setRunning(true);
+    setError(null);
+    setOutput(null);
+    setLoopCritique(null);
+    try {
+      setLoopStage("writing");
+      let draft = await startAndPoll("/api/write-script/start", buildWriteBody());
+
+      let lastCritique = "";
+      for (let i = 0; i < passes; i++) {
+        setLoopStage("critiquing");
+        lastCritique = await startAndPoll("/api/critique/start", { text: draft, showTitle, genre });
+        setLoopCritique(lastCritique);
+
+        setLoopStage("rewriting");
+        draft = await startAndPoll("/api/rewrite/start", { script: draft, notes: lastCritique, genre });
+      }
+
+      // Leave the pieces in the manual tabs too, so the writer can keep iterating.
+      setRewriteScript(draft);
+      setCritiqueText(draft);
+      setOutput(draft);
+      setKind("rewrite");
+      requestAnimationFrame(() => outputRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The loop failed.");
+    } finally {
+      setLoopStage("idle");
+      setRunning(false);
     }
   };
 
@@ -294,14 +357,15 @@ export function CritiquePanel({
                       )}
                     </button>
                   ))}
-                  {(templateFormat === "tv" || templateFormat === "film") && (
+                  {templateFormat !== "none" && (
                     <select
                       value={templateGenre}
                       onChange={(e) => {
                         setTemplateGenre(e.target.value as Genre);
                         setFilmTemplateName("");
                       }}
-                      className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200"
+                      disabled={templateFormat === "learned" && learnedAllGenres}
+                      className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200 disabled:opacity-40"
                     >
                       {GENRES.map((g) => (
                         <option key={g} value={g}>
@@ -325,17 +389,30 @@ export function CritiquePanel({
                     </select>
                   )}
                   {templateFormat === "learned" && (
-                    <select
-                      value={learnedTemplateId}
-                      onChange={(e) => setLearnedTemplateId(e.target.value)}
-                      className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200"
-                    >
-                      {learnedTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t.genre})
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        value={effectiveLearnedId}
+                        onChange={(e) => setLearnedTemplateId(e.target.value)}
+                        disabled={learnedForGenre.length === 0}
+                        className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200 disabled:opacity-40"
+                      >
+                        {learnedForGenre.length === 0 && <option value="">No {templateGenre} templates learned</option>}
+                        {learnedForGenre.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.genre})
+                          </option>
+                        ))}
+                      </select>
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11.5px] text-neutral-400">
+                        <input
+                          type="checkbox"
+                          checked={learnedAllGenres}
+                          onChange={(e) => setLearnedAllGenres(e.target.checked)}
+                          className="size-3.5 accent-amber-500"
+                        />
+                        All genres
+                      </label>
+                    </>
                   )}
                 </div>
                 {templateFormat !== "none" && (
@@ -345,8 +422,10 @@ export function CritiquePanel({
                       : templateFormat === "film"
                         ? renderFilmTemplateBrief(getFilmSuite(templateGenre)!, filmTemplateName || undefined)
                         : (() => {
-                            const t = learnedTemplates.find((lt) => lt.id === learnedTemplateId);
-                            return t ? renderLearnedTemplateBrief(t) : "No learned templates yet — finalize an episode first.";
+                            const t = learnedTemplates.find((lt) => lt.id === effectiveLearnedId);
+                            return t
+                              ? renderLearnedTemplateBrief(t)
+                              : `No ${learnedAllGenres ? "" : `${templateGenre} `}learned templates yet — finalize an episode in this genre first.`;
                           })()}
                   </pre>
                 )}
@@ -368,6 +447,48 @@ export function CritiquePanel({
               <Field label="Target length">
                 <TextInput value={targetLength} onChange={(e) => setTargetLength(e.target.value)} />
               </Field>
+
+              {/* Recursive Write -> Critique -> Rewrite loop (Section 4). */}
+              <div className="space-y-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label className="inline-flex items-center gap-1.5">
+                    <Sparkles size={11} aria-hidden /> Auto-polish loop
+                  </Label>
+                  <span className="text-[11.5px] text-neutral-400">Write → critique → rewrite, automatically.</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-1.5 text-[12px] text-neutral-300">
+                    Critique/rewrite passes
+                    <select
+                      value={passes}
+                      onChange={(e) => setPasses(Number(e.target.value))}
+                      disabled={running}
+                      className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200 disabled:opacity-40"
+                    >
+                      {[1, 2, 3].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button variant="primary" size="md" onClick={() => void runLoop()} disabled={running || idea.trim().length === 0}>
+                    {loopStage !== "idle" ? <Spinner size={13} /> : <Sparkles size={13} />}
+                    {loopStage === "idle"
+                      ? "Run full loop"
+                      : loopStage === "writing"
+                        ? "Writing draft…"
+                        : loopStage === "critiquing"
+                          ? "Running critique…"
+                          : "Applying rewrite…"}
+                  </Button>
+                </div>
+                <p className="text-[11px] leading-snug text-neutral-500">
+                  Generates a draft from your idea (with the template + bible above), runs it through the genre-aware
+                  exec critique, then feeds those notes into the surgical rewrite — repeated for each pass. The polished
+                  draft lands below and in the Rewrite tab.
+                </p>
+              </div>
             </>
           )}
 
@@ -391,6 +512,17 @@ export function CritiquePanel({
             <div className="rounded-md border border-red-800/50 bg-red-950/40 p-2.5 text-[12px] leading-snug text-red-300">
               {error}
             </div>
+          )}
+
+          {loopCritique && (
+            <details className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+              <summary className="cursor-pointer text-[12px] font-medium text-amber-300">
+                Loop critique notes (fed into the rewrite)
+              </summary>
+              <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-neutral-400">
+                {loopCritique}
+              </pre>
+            </details>
           )}
 
           {output && (
@@ -422,7 +554,10 @@ export function CritiquePanel({
         <div className="flex items-center gap-3 border-t border-neutral-800 px-4 py-3">
           {running && (
             <span className="inline-flex items-center gap-2 text-[12px] text-neutral-400">
-              <Spinner size={13} /> Working… {elapsed}s elapsed — a full script can take a few minutes.
+              <Spinner size={13} />
+              {loopStage === "idle"
+                ? `Working… ${elapsed}s elapsed — a full script can take a few minutes.`
+                : `Loop: ${loopStage}… ${elapsed}s elapsed — each stage is a full generation.`}
             </span>
           )}
           <Button variant="primary" size="md" className="ml-auto" onClick={submit} disabled={!canSubmit}>

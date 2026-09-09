@@ -27,6 +27,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Single place to pin the generation model instead of repeating the literal.
+MODEL = "gemini-3.8-flash"
+
+
+def _evict_jobs(store: dict, cap: int = 100) -> None:
+    """Bound an in-memory job store so long uptime doesn't leak memory.
+    Dicts preserve insertion order, so the first keys are the oldest jobs."""
+    while len(store) > cap:
+        store.pop(next(iter(store)), None)
+
 # --- Legacy "Script Studio" app (old, unrelated prototype at the project
 # root) — kept reachable at /legacy/public/ for reference only. Showrunner
 # Studio (this app) is the primary experience; the legacy app is not linked
@@ -199,7 +209,7 @@ Use these exact character ids when referencing dialogue speakers: {[c.id for c i
 async def generate_scene(req: GenerateSceneRequest):
     client = get_client()
     prompt = build_prompt(req)
-    response = generate_with_retry(client, model="gemini-3.8-flash", contents=[SYSTEM_INSTRUCTIONS, prompt])
+    response = generate_with_retry(client, model=MODEL, contents=[SYSTEM_INSTRUCTIONS, prompt])
     text = (response.text or "").strip()
     # Strip accidental markdown fences.
     if text.startswith("```"):
@@ -404,6 +414,7 @@ async def import_parse_start(req: ImportParseRequest):
         raise HTTPException(status_code=400, detail="No text provided to parse.")
 
     job_id = uuid.uuid4().hex
+    _evict_jobs(_import_jobs)
     _import_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
 
     def run_job():
@@ -411,7 +422,7 @@ async def import_parse_start(req: ImportParseRequest):
             client = get_client()
             prompt = build_import_prompt(req)
             response = generate_with_retry(
-                client, model="gemini-3.8-flash", contents=[IMPORT_SYSTEM_INSTRUCTIONS, prompt]
+                client, model=MODEL, contents=[IMPORT_SYSTEM_INSTRUCTIONS, prompt]
             )
             text = _strip_json_fences(response.text or "")
             try:
@@ -458,7 +469,7 @@ async def import_parse(req: ImportParseRequest):
 
     client = get_client()
     prompt = build_import_prompt(req)
-    response = generate_with_retry(client, model="gemini-3.8-flash", contents=[IMPORT_SYSTEM_INSTRUCTIONS, prompt])
+    response = generate_with_retry(client, model=MODEL, contents=[IMPORT_SYSTEM_INSTRUCTIONS, prompt])
     text = _strip_json_fences(response.text or "")
     try:
         data = json.loads(text)
@@ -626,7 +637,6 @@ GENRE_NOTES: dict[str, str] = {
     "Action & Adventure": "Physical stakes and momentum are the spine — every set piece should advance character or plot, not just spectacle. Judge geography and stakes clarity: can the audience track where everyone is and what they lose if this goes wrong? Cut any lull that isn't earning a breather beat before the next escalation.",
     "Romance": "The relationship's obstacle (internal or external) must feel specific and earned, not manufactured misunderstanding. Track the push-pull rhythm scene to scene — attraction, friction, vulnerability — and judge whether the eventual turn is earned by specific beats rather than a genre-mandated timer running out.",
     "Horror": "Dread is a pacing discipline — judge the ratio of unease-building beats to release/scare beats, and whether the scare is earned by everything preceding it. The threat's rules (what it can/can't do, why now) must stay consistent; random rule-breaks for shock value kill audience trust.",
-    "Action-Adventure": "Physical stakes and momentum are the spine — every set piece should advance character or plot, not just spectacle.",
     "Live Action": "Judge groundedness: physical staging, blocking and practical logistics should read as filmable in the real world, not just conceptually cool. Flag anything that only works as an idea and falls apart when you imagine an actual crew and cast executing it on a real set.",
 }
 
@@ -717,6 +727,7 @@ async def extract_template_start(req: ExtractTemplateRequest):
         raise HTTPException(status_code=400, detail="No episode text to extract a template from.")
 
     job_id = uuid.uuid4().hex
+    _evict_jobs(_template_jobs)
     _template_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
 
     def run_job():
@@ -725,7 +736,7 @@ async def extract_template_start(req: ExtractTemplateRequest):
             prompt = build_template_extraction_prompt(req)
             response = generate_with_retry(
                 client,
-                model="gemini-3.8-flash",
+                model=MODEL,
                 contents=[TEMPLATE_EXTRACTION_SYSTEM_PROMPT, prompt],
             )
             text = _strip_json_fences(response.text or "")
@@ -791,6 +802,7 @@ class RewriteScriptRequest(BaseModel):
 def _start_ai_job(prompt_builder):
     """Shared job runner for long text generations (critique/write/rewrite)."""
     job_id = uuid.uuid4().hex
+    _evict_jobs(_ai_jobs)
     _ai_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
 
     def run_job():
@@ -798,7 +810,7 @@ def _start_ai_job(prompt_builder):
             client = get_client()
             response = generate_with_retry(
                 client,
-                model="gemini-3.8-flash",
+                model=MODEL,
                 contents=[prompt_builder()],
                 config={"max_output_tokens": 16384},
             )
