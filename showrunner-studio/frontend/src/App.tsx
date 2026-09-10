@@ -29,11 +29,13 @@ import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal
 const ImportPanel = lazy(() => import("./components/ImportPanel").then((m) => ({ default: m.ImportPanel })));
 const CrossoverStudio = lazy(() => import("./components/CrossoverStudio").then((m) => ({ default: m.CrossoverStudio })));
 import { SettingsModal } from "./components/SettingsModal";
-import { ShotLibrary } from "./components/ShotLibrary";
+import { PromptLibrary } from "./components/PromptLibrary";
+import { SHOT_CATEGORIES, SHOT_FORMULA } from "./lib/cameraShots";
+import { TRANSITION_CATEGORIES } from "./lib/transitions";
 import { Button, Field, Modal, TextInput } from "./components/ui";
 import { finalizeEpisode } from "./lib/templateLearning";
 
-type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | "crossover" | "shots" | null;
+type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | "crossover" | "shots" | "transitions" | null;
 
 // Top-bar workspace modes. Episode compiles the whole episode into prompt
 // cards (center takeover); the three scene modes drive the right rail.
@@ -325,6 +327,7 @@ export default function App() {
             onOpenAiLab={() => setModal("ailab")}
             onOpenCrossover={() => setModal("crossover")}
             onOpenShots={() => setModal("shots")}
+            onOpenTransitions={() => setModal("transitions")}
             onOpenTemplates={() => setModal("templates")}
             templateCount={templateList.length}
             onFinalizeEpisode={finalizeEpisodeHandler}
@@ -439,7 +442,27 @@ export default function App() {
         </>
       )}
       <SettingsModal open={modal === "settings"} onClose={() => setModal(null)} />
-      <ShotLibrary open={modal === "shots"} onClose={() => setModal(null)} />
+      <PromptLibrary
+        open={modal === "shots"}
+        onClose={() => setModal(null)}
+        title="Shot Library"
+        subtitle="Camera-move formulas — copy one into a clip's Action (camera moves live in the Action, not a separate field)."
+        categories={SHOT_CATEGORIES}
+        headerNote={{
+          label: "Professional formula",
+          mono: SHOT_FORMULA,
+          tip: "Keep a character consistent by injecting your Character Sheet anchor into the image-reference slot for every generation.",
+        }}
+        searchPlaceholder="Search shots — dolly, orbit, whip, saccade…"
+      />
+      <PromptLibrary
+        open={modal === "transitions"}
+        onClose={() => setModal(null)}
+        title="Transition Library"
+        subtitle="Transitions — copy one into a clip's Action (the transition into/out of a clip lives in the Action)."
+        categories={TRANSITION_CATEGORIES}
+        searchPlaceholder="Search transitions — flame, whip, tunnel, ridge…"
+      />
       <ShowBibleModal open={modal === "bible"} onClose={() => setModal(null)} show={show} />
       {modal === "ailab" && (
         <Suspense fallback={null}>
