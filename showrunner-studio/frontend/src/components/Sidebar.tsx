@@ -1,7 +1,7 @@
 // Sidebar.tsx — Project tree (Shows → Episodes → Scenes) + catalog shortcuts.
 import { useState, type ReactNode } from "react";
 import clsx from "clsx";
-import { BookOpen, ChevronRight, FileUp, FlaskConical, GitMerge, Library, MapPin, Pencil, Plus, Sparkles, Trash, Users } from "lucide-react";
+import { BookOpen, Camera, ChevronRight, FileUp, FlaskConical, GitMerge, Library, MapPin, Pencil, Plus, Sparkles, Trash, Users } from "lucide-react";
 import type { EpisodeEntity, SceneEntity, ShowMeta } from "../types";
 import { Button, Spinner } from "./ui";
 
@@ -31,6 +31,7 @@ interface SidebarProps {
   onOpenImport: () => void;
   onOpenAiLab: () => void;
   onOpenCrossover: () => void;
+  onOpenShots: () => void;
   onOpenTemplates: () => void;
   templateCount: number;
   onFinalizeEpisode: (ep: EpisodeEntity) => void;
@@ -195,7 +196,7 @@ export function Sidebar(props: SidebarProps) {
     onDeleteShow, onDeleteEpisode, onDeleteScene,
     onRenameShow, onRenameEpisode,
     onOpenSets, onOpenCharacters, onOpenShowBible, onOpenImport, onOpenAiLab,
-    onOpenCrossover, onOpenTemplates, templateCount, onFinalizeEpisode, finalizingEpisodeId,
+    onOpenCrossover, onOpenShots, onOpenTemplates, templateCount, onFinalizeEpisode, finalizingEpisodeId,
     className, isMovie,
   } = props;
 
@@ -306,6 +307,10 @@ export function Sidebar(props: SidebarProps) {
         <Button variant="subtle" size="md" className="w-full justify-start" onClick={onOpenCrossover}>
           <GitMerge size={13} />
           Crossover Studio
+        </Button>
+        <Button variant="subtle" size="md" className="w-full justify-start" onClick={onOpenShots}>
+          <Camera size={13} />
+          Shot Library
         </Button>
         <Button variant="subtle" size="md" className="w-full justify-start" onClick={onOpenImport}>
           <FileUp size={13} />

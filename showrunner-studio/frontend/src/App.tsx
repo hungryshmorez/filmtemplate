@@ -29,10 +29,11 @@ import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal
 const ImportPanel = lazy(() => import("./components/ImportPanel").then((m) => ({ default: m.ImportPanel })));
 const CrossoverStudio = lazy(() => import("./components/CrossoverStudio").then((m) => ({ default: m.CrossoverStudio })));
 import { SettingsModal } from "./components/SettingsModal";
+import { ShotLibrary } from "./components/ShotLibrary";
 import { Button, Field, Modal, TextInput } from "./components/ui";
 import { finalizeEpisode } from "./lib/templateLearning";
 
-type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | "crossover" | null;
+type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | "crossover" | "shots" | null;
 
 // Top-bar workspace modes. Episode compiles the whole episode into prompt
 // cards (center takeover); the three scene modes drive the right rail.
@@ -323,6 +324,7 @@ export default function App() {
             onOpenImport={() => setModal("import")}
             onOpenAiLab={() => setModal("ailab")}
             onOpenCrossover={() => setModal("crossover")}
+            onOpenShots={() => setModal("shots")}
             onOpenTemplates={() => setModal("templates")}
             templateCount={templateList.length}
             onFinalizeEpisode={finalizeEpisodeHandler}
@@ -437,6 +439,7 @@ export default function App() {
         </>
       )}
       <SettingsModal open={modal === "settings"} onClose={() => setModal(null)} />
+      <ShotLibrary open={modal === "shots"} onClose={() => setModal(null)} />
       <ShowBibleModal open={modal === "bible"} onClose={() => setModal(null)} show={show} />
       {modal === "ailab" && (
         <Suspense fallback={null}>
