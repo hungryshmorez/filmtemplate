@@ -406,6 +406,19 @@ with every AI request.
 Sets and Characters are managed in a responsive 40/60 modal with independent
 internal scroll; character chips cluster by role with a quick filter.
 
+### Reference images (covers, portraits, set photos)
+
+Shows get a **cover image**, characters a **portrait**, and sets a **reference
+photo** — uploaded in their respective editors (Show Bible, Characters, Sets).
+Because the app is local-first with no storage backend, an upload is
+**downscaled in the browser** (`lib/images.ts` — ≤512px longest edge, encoded as
+WebP or JPEG at ~0.82 quality) and stored as a compressed **data URL directly on
+the entity** (`ShowMeta.coverImage`, `CharacterEntity.portrait`,
+`SetEntity.image`). That means no schema or index change was needed and the
+images **ride along in the JSON project export/import** automatically. The
+reusable `ImagePicker` control handles upload/replace/remove with a live
+preview, and the catalog list rows show thumbnails.
+
 ## 9. The AI system prompts (personas)
 
 The backend's craft lives in a handful of carefully written system prompts. They

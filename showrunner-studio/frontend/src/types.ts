@@ -25,6 +25,7 @@ export interface ShowMeta {
   premise: string; // world rules, lore, visual style, glitch/broadcast aesthetics
   kind?: ShowKind; // undefined is treated as "series" (back-compat with v1/v2 rows)
   acts?: MovieAct[]; // canonical act/beat structure for movies only
+  coverImage?: string; // downscaled data URL (see lib/images.ts)
   createdAt: number;
   updatedAt: number;
 }
@@ -35,6 +36,7 @@ export interface SetEntity {
   name: string; // exact name used for #TagName calls
   timeOfDay: string; // "Interior" | "Exterior" | "Night" | "Liminal" | free text
   description: string; // physical traits, props, textures, ambient audio
+  image?: string; // downscaled data URL reference photo (see lib/images.ts)
   createdAt: number;
   updatedAt: number;
 }
@@ -48,6 +50,7 @@ export interface CharacterEntity {
   gender: string;
   visualDescription: string; // physical form, material, clothing, visual quirks
   voiceDescription: string; // timbre, dialect, cadence, audio processing/distortion traits
+  portrait?: string; // downscaled data URL reference portrait (see lib/images.ts)
   createdAt: number;
   updatedAt: number;
 }

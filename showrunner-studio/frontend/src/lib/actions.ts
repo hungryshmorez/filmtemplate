@@ -125,7 +125,7 @@ export async function deleteScene(id: string) {
 
 // --- Sets ----------------------------------------------------------------------
 
-export async function createSet(showId: string, data: Pick<SetEntity, "name" | "timeOfDay" | "description">): Promise<string> {
+export async function createSet(showId: string, data: Pick<SetEntity, "name" | "timeOfDay" | "description"> & Partial<Pick<SetEntity, "image">>): Promise<string> {
   const id = uid("set");
   const ts = now();
   await db.sets.put({ id, showId, ...data, createdAt: ts, updatedAt: ts });

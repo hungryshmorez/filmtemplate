@@ -7,7 +7,20 @@ import type { CharacterEntity, CharacterRole, LearnedTemplate, SetEntity, ShowMe
 import { createCharacter, createSet, deleteCharacter, deleteSet, updateCharacter, updateSet, updateShow } from "../lib/actions";
 import { deleteLearnedTemplate } from "../lib/templateLearning";
 import { Button, Chip, Field, Label, Modal, Select, TextArea, TextInput } from "./ui";
+import { ImagePicker } from "./ImagePicker";
 import { useConfirm } from "./ConfirmDialog";
+
+// Small square/wide thumbnail for a catalog list row.
+function RowThumb({ src, alt, shape = "square" }: { src?: string; alt: string; shape?: "square" | "wide" }) {
+  if (!src) return null;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={clsx("shrink-0 rounded border border-neutral-800 object-cover", shape === "wide" ? "h-8 w-12" : "h-8 w-8")}
+    />
+  );
+}
 
 // --- Shared bits --------------------------------------------------------------
 
@@ -54,6 +67,7 @@ export function SetsManager({ open, onClose, showId, sets }: SetsManagerProps) {
   const [name, setName] = useState("");
   const [timeOfDay, setTimeOfDay] = useState("");
   const [description, setDescription] = useState("");
+  const [image, setImage] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!open) {
@@ -61,6 +75,7 @@ export function SetsManager({ open, onClose, showId, sets }: SetsManagerProps) {
       setName("");
       setTimeOfDay("");
       setDescription("");
+      setImage(undefined);
     }
   }, [open]);
 
@@ -69,6 +84,7 @@ export function SetsManager({ open, onClose, showId, sets }: SetsManagerProps) {
     setName(s.name);
     setTimeOfDay(s.timeOfDay);
     setDescription(s.description);
+    setImage(s.image);
   };
 
   const reset = () => {
@@ -76,15 +92,21 @@ export function SetsManager({ open, onClose, showId, sets }: SetsManagerProps) {
     setName("");
     setTimeOfDay("");
     setDescription("");
+    setImage(undefined);
+  };
+
+  const saveImage = (next: string | undefined) => {
+    setImage(next);
+    if (editingId) void updateSet(editingId, { image: next });
   };
 
   const save = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (editingId) {
-      await updateSet(editingId, { name: trimmed, timeOfDay: timeOfDay.trim(), description });
+      await updateSet(editingId, { name: trimmed, timeOfDay: timeOfDay.trim(), description, image });
     } else {
-      await createSet(showId, { name: trimmed, timeOfDay: timeOfDay.trim(), description });
+      await createSet(showId, { name: trimmed, timeOfDay: timeOfDay.trim(), description, image });
     }
     reset();
   };
@@ -105,6 +127,7 @@ export function SetsManager({ open, onClose, showId, sets }: SetsManagerProps) {
                   )}
                   onClick={() => loadForEdit(s)}
                 >
+                  <RowThumb src={s.image} alt={`${s.name} reference`} shape="wide" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{s.name}</div>
                     <div className="truncate text-[10px] text-neutral-400">{s.timeOfDay || "—"}</div>
@@ -168,6 +191,13 @@ export function SetsManager({ open, onClose, showId, sets }: SetsManagerProps) {
                 aria-label="Set description"
               />
             </Field>
+            <ImagePicker
+              label="Reference photo"
+              shape="wide"
+              value={image}
+              onChange={saveImage}
+              hint="A visual reference for this location. Downscaled and stored in this browser."
+            />
             <div className="flex items-center gap-2">
               <Button variant="primary" size="md" onClick={save} disabled={!validName}>
                 <Plus size={13} strokeWidth={2.5} />
@@ -206,6 +236,7 @@ export function CharactersManager({ open, onClose, showId, characters }: Charact
   const [gender, setGender] = useState("");
   const [visualDescription, setVisualDescription] = useState("");
   const [voiceDescription, setVoiceDescription] = useState("");
+  const [portrait, setPortrait] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!open) reset();
@@ -220,6 +251,7 @@ export function CharactersManager({ open, onClose, showId, characters }: Charact
     setGender("");
     setVisualDescription("");
     setVoiceDescription("");
+    setPortrait(undefined);
   };
 
   const loadForEdit = (c: CharacterEntity) => {
@@ -230,6 +262,12 @@ export function CharactersManager({ open, onClose, showId, characters }: Charact
     setGender(c.gender);
     setVisualDescription(c.visualDescription);
     setVoiceDescription(c.voiceDescription);
+    setPortrait(c.portrait);
+  };
+
+  const savePortrait = (next: string | undefined) => {
+    setPortrait(next);
+    if (editingId) void updateCharacter(editingId, { portrait: next });
   };
 
   const save = async () => {
@@ -242,6 +280,7 @@ export function CharactersManager({ open, onClose, showId, characters }: Charact
       gender: gender.trim(),
       visualDescription,
       voiceDescription,
+      portrait,
     };
     if (editingId) {
       await updateCharacter(editingId, payload);
@@ -273,6 +312,7 @@ export function CharactersManager({ open, onClose, showId, characters }: Charact
                   )}
                   onClick={() => loadForEdit(c)}
                 >
+                  <RowThumb src={c.portrait} alt={`${c.name} portrait`} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{c.name}</div>
                     <div className="truncate text-[10px] text-neutral-400">{c.role}</div>
@@ -350,6 +390,13 @@ export function CharactersManager({ open, onClose, showId, characters }: Charact
                 aria-label="Voice description"
               />
             </Field>
+            <ImagePicker
+              label="Portrait"
+              shape="square"
+              value={portrait}
+              onChange={savePortrait}
+              hint="A reference portrait for this character. Downscaled and stored in this browser."
+            />
             <div className="flex items-center gap-2">
               <Button variant="primary" size="md" onClick={save} disabled={!validName}>
                 <Plus size={13} strokeWidth={2.5} />
@@ -393,6 +440,13 @@ export function ShowBibleModal({ open, onClose, show }: ShowBibleModalProps) {
   return (
     <Modal open={open} onClose={onClose} title="Show Bible" subtitle="Top-level context fed to the AI scene generator." wide>
       <div className="space-y-3 p-4">
+        <ImagePicker
+          label="Cover image"
+          shape="wide"
+          value={show.coverImage}
+          onChange={(next) => void updateShow(show.id, { coverImage: next })}
+          hint="A cover for this project. Downscaled and stored in this browser."
+        />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Title">
             <TextInput

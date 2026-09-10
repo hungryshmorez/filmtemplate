@@ -30,7 +30,13 @@
 - The launcher is `showrunner-studio/start.sh` (backend + frontend together). The repo-root `start.sh` now just delegates to it, so `./start.sh` from the root works too. The old "Script Studio" prototype (root `public/`, `source/`, `filmtemplate.txt`) has been removed.
 
 ## Pending / roadmap (user-confirmed direction, not yet built)
-- Image uploads for show covers, characters, and sets (no storage backend yet — likely Dexie blob storage since no DB connector exists).
+- ~~Image uploads for show covers, characters, and sets~~ **DONE.** Local-first:
+  `lib/images.ts` downscales an uploaded file (≤512px longest edge, WebP/JPEG
+  ~0.82) to a compressed data URL stored directly on the entity
+  (`ShowMeta.coverImage`, `CharacterEntity.portrait`, `SetEntity.image`) — no
+  schema/index change, so images ride along in the JSON export/import.
+  Reusable `components/ImagePicker.tsx`; wired into the Characters, Sets, and
+  Show Bible editors with list-row thumbnails.
 - Genre-aware critique/write/rewrite prompts across 14 genres: Comedy, Sitcom, Drama, Reality TV, Sci-Fi, Anime, Fantasy, Family, Western, Crime, Action & Adventure, Romance, Horror, Live Action.
 - Recursive write→critique→rewrite loop in AI Script Lab.
 - **Story template library**: user wants a `templates.ts`-style library that (a) is offered as brainstorm scaffolding when writing an episode, and (b) grows organically — when the user finishes/finalizes an episode, the app should strip a general reusable template out of it and save it back to the library. This is a distinct "learn from what you ship" loop, not just a static seed list. TV templates should feed the "Write Script" step per-genre.
