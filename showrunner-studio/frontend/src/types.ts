@@ -1,4 +1,4 @@
-// types.ts — Core data model for Showrunner / Seedance Studio
+// types.ts — Core data model for Show-Writer Studio (Showrunner + Seedance exports)
 
 export type CharacterRole = "Protagonist" | "Antagonist" | "Supporting";
 

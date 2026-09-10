@@ -21,7 +21,7 @@ function downloadSnapshot(snapshot: ProjectSnapshot) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `showrunner-studio-${date}.json`;
+  a.download = `show-writer-studio-${date}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -45,7 +45,7 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible, 
     try {
       const parsed = JSON.parse(await file.text()) as ProjectSnapshot;
       if (!parsed || !Array.isArray(parsed.shows)) {
-        setImportError("That file doesn't look like a Showrunner Studio project export.");
+        setImportError("That file doesn't look like a Show-Writer Studio project export.");
         return;
       }
       setPendingImport(parsed);

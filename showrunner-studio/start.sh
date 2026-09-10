@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start Showrunner Studio: FastAPI backend + Vite/React frontend.
+# Start Show-Writer Studio: FastAPI backend + Vite/React frontend.
 set -e
 
 cd "$(dirname "$0")"

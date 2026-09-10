@@ -1,4 +1,9 @@
-imon# Showrunner Studio — Project Context
+# Show-Writer Studio — Project Context
+
+> Product branding is "Show-Writer Studio". The `showrunner-studio/` folder
+> name, the `showrunner-studio` IndexedDB name, and the "Showrunner" export
+> *format* are intentionally kept (internal identifiers + a format style, not
+> the product brand) so existing local data isn't orphaned.
 
 ## Stack
 - `showrunner-studio/frontend`: Vite + React + TS, Dexie (IndexedDB) storage, Tailwind.

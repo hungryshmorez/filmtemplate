@@ -20,7 +20,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     // Surface for debugging; the panel below is the user-facing recovery.
-    console.error("Showrunner Studio crashed:", error, info.componentStack);
+    console.error("Show-Writer Studio crashed:", error, info.componentStack);
   }
 
   render() {

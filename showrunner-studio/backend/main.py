@@ -1,4 +1,4 @@
-"""Showrunner Studio backend — LLM script generation endpoint.
+"""Show-Writer Studio backend — LLM script generation endpoint.
 
 Given a Show Bible, a selected Set, selected Characters, and a scene concept,
 asks Gemini to draft a new scene mapped directly into the app's data schema
@@ -7,7 +7,6 @@ asks Gemini to draft a new scene mapped directly into the app's data schema
 import io
 import json
 import os
-import pathlib
 import threading
 import time
 import uuid
@@ -15,10 +14,9 @@ from typing import Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Showrunner Studio Backend")
+app = FastAPI(title="Show-Writer Studio Backend")
 
 # CORS defaults to open (local-first dev). Set CORS_ALLOW_ORIGINS to a
 # comma-separated allowlist to lock it down for a real deployment.
@@ -55,18 +53,6 @@ def _evict_jobs(store: dict, cap: int = 100) -> None:
     Dicts preserve insertion order, so the first keys are the oldest jobs."""
     while len(store) > cap:
         store.pop(next(iter(store)), None)
-
-# --- Legacy "Script Studio" app (old, unrelated prototype at the project
-# root) — kept reachable at /legacy/public/ for reference only. Showrunner
-# Studio (this app) is the primary experience; the legacy app is not linked
-# from anywhere except an explicit "Old version" link in the new UI.
-_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_LEGACY_PUBLIC = _PROJECT_ROOT / "public"
-_LEGACY_SOURCE = _PROJECT_ROOT / "source"
-if _LEGACY_SOURCE.is_dir():
-    app.mount("/legacy/source", StaticFiles(directory=str(_LEGACY_SOURCE)), name="legacy-source")
-if _LEGACY_PUBLIC.is_dir():
-    app.mount("/legacy/public", StaticFiles(directory=str(_LEGACY_PUBLIC), html=True), name="legacy-public")
 
 # In-memory job store for the async bulk-import breakdown (see
 # /api/import/parse/start below). Fine for a single-process dev/small-deploy
