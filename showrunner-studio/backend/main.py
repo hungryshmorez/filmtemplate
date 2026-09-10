@@ -1125,3 +1125,133 @@ async def episode_prompts_status(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Unknown job id.")
     return job
+
+
+# --- Crossover: bridge two shows into one generation-ready episode ----------
+#
+# Collides two show bibles into a single cohesive multi-scene episode, output
+# in the reference Scene / Dialogue / Action shape (one prompt per ~15 seconds),
+# grouped by scene, honoring the app's constraints (max 3 characters per beat,
+# ~25-word dialogue budget, camera/transitions folded into action, and the
+# "therefore / but" causality law).
+
+CROSSOVER_SYSTEM = """\
+You are an expert showrunner, script supervisor, and narrative architect. You bridge TWO distinct \
+shows into a SINGLE cohesive crossover episode.
+
+WORLD COLLISION:
+- Honor each show's world rules, aesthetic and character voices exactly. Keep every character's \
+established voice and behavior; let the friction between the two tones drive the comedy/dread.
+- Use ONLY the exact character names and set names supplied for the two shows. Do not invent new \
+named characters or sets. Reference characters as @Name and sets as #Set Name inside the action \
+where natural.
+
+GENERATION CONSTRAINTS (non-negotiable):
+- Break the episode into the requested number of SCENES, in story order.
+- Inside each scene, break the action into self-contained beats, ONE PER ~15 SECONDS. Each beat is \
+a standalone clip a video model can generate on its own.
+- At most 3 characters present per beat (a take locks its cast). If more are involved, split across \
+beats.
+- Keep spoken dialogue to what fits 15 seconds — roughly 25 words total per beat. Push overflow to \
+the next beat.
+- Fold ALL cinematic detail (camera movement, shot framing, transitions in/out of the clip, \
+character-consistency cues) INTO the action field. There is no separate camera or transition field.
+
+EACH BEAT OBJECT:
+- "scene": one rich sentence — mood + location/set + lighting and color palette + atmosphere.
+- "dialogue": array of { "character": exact name, "delivery": short delivery note, "line": spoken words }. Empty array if none.
+- "action": cinematic staging in active verbs, INCLUDING camera movement and any transition.
+
+Return ONLY valid JSON, no markdown fences, matching exactly:
+{ "title": "...", "logline": "...", "outline": ["Scene 1 — ...", "Scene 2 — ..."], \
+"scenes": [ { "name": "...", "prompts": [ { "scene": "...", "dialogue": [ { "character": "...", "delivery": "...", "line": "..." } ], "action": "..." } ] } ] }
+""" + CAUSALITY_RULE
+
+
+class CrossoverShow(BaseModel):
+    title: str = ""
+    genre: str = ""
+    premise: str = ""
+    characters: list[CharacterBrief] = Field(default_factory=list)
+    sets: list[SetBrief] = Field(default_factory=list)
+
+
+class CrossoverRequest(BaseModel):
+    show1: CrossoverShow
+    show2: CrossoverShow
+    premise: str = Field(..., description="Crossover catalyst / inciting incident")
+    tone: str = ""
+    scene_count: int = 3
+    provider: Optional[ProviderConfig] = None
+
+
+_crossover_jobs: dict[str, dict] = {}
+
+
+def _render_show_bible(show: CrossoverShow, label: str) -> str:
+    chars = "\n".join(
+        f"  * {c.name} ({c.role}, {c.age} {c.gender}): visual={c.visual_description} | voice={c.voice_description}"
+        for c in show.characters
+    ) or "  * (none registered)"
+    sets = "\n".join(f"  * #{s.name} — {s.time_of_day} — {s.description}" for s in show.sets) or "  * (none registered)"
+    return (
+        f"[{label}]\n"
+        f"- Title: {show.title}\n"
+        f"- Genre / Aesthetic: {show.genre}\n"
+        f"- Premise & World Rules: {show.premise}\n"
+        f"- Characters:\n{chars}\n"
+        f"- Sets:\n{sets}"
+    )
+
+
+def build_crossover_prompt(req: CrossoverRequest) -> str:
+    n = max(1, req.scene_count)
+    return f"""{_render_show_bible(req.show1, "SHOW 1 BIBLE")}
+
+{_render_show_bible(req.show2, "SHOW 2 BIBLE")}
+
+[CROSSOVER PREMISE & INCITING INCIDENT]
+{req.premise.strip()}
+
+[TONE TARGET]
+{req.tone.strip() or "Play the two shows' tones against each other."}
+
+[LENGTH]
+Exactly {n} sequential scene{"s" if n != 1 else ""}. Give each scene a short evocative name and 3-6 fifteen-second beats.
+
+Write the crossover now and return the JSON object described in the system prompt."""
+
+
+@app.post("/api/crossover/start")
+async def crossover_start(req: CrossoverRequest):
+    if not req.premise.strip():
+        raise HTTPException(status_code=400, detail="No crossover premise provided.")
+
+    job_id = uuid.uuid4().hex
+    _evict_jobs(_crossover_jobs)
+    _crossover_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
+
+    def run_job():
+        try:
+            text = _strip_json_fences(llm_generate(req.provider, CROSSOVER_SYSTEM, build_crossover_prompt(req), max_tokens=32768))
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                _crossover_jobs[job_id] = {"status": "error", "result": None, "error": f"Model did not return valid JSON: {e}. Raw (first 800 chars): {text[:800]}"}
+                return
+            _crossover_jobs[job_id] = {"status": "done", "result": data, "error": None}
+        except HTTPException as e:
+            _crossover_jobs[job_id] = {"status": "error", "result": None, "error": str(e.detail)}
+        except Exception as e:
+            _crossover_jobs[job_id] = {"status": "error", "result": None, "error": f"Unexpected error: {e}"}
+
+    threading.Thread(target=run_job, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/crossover/status/{job_id}")
+async def crossover_status(job_id: str):
+    job = _crossover_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job id.")
+    return job

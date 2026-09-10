@@ -157,6 +157,29 @@ export interface EpisodePromptRun {
   updatedAt: number;
 }
 
+// --- Crossover episodes (bridge two shows into one episode) ---
+
+export interface CrossoverScene {
+  name: string;
+  prompts: ReferencePrompt[]; // reference 15s Scene/Dialogue/Action beats
+}
+
+export interface StoredCrossover {
+  id: string;
+  title: string;
+  logline: string;
+  outline: string[];
+  scenes: CrossoverScene[];
+  show1Id: string;
+  show2Id: string;
+  show1Title: string;
+  show2Title: string;
+  premise: string;
+  tone: string;
+  sceneCount: number;
+  createdAt: number;
+}
+
 // --- Export engine types ---
 
 export type TransitionType =

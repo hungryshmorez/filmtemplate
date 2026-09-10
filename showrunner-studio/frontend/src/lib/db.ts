@@ -8,6 +8,7 @@ import type {
   SceneEntity,
   LearnedTemplate,
   EpisodePromptRun,
+  StoredCrossover,
 } from "../types";
 
 export class StudioDB extends Dexie {
@@ -18,6 +19,7 @@ export class StudioDB extends Dexie {
   scenes!: EntityTable<SceneEntity, "id">;
   learnedTemplates!: EntityTable<LearnedTemplate, "id">;
   episodePromptRuns!: EntityTable<EpisodePromptRun, "id">;
+  crossovers!: EntityTable<StoredCrossover, "id">;
 
   constructor() {
     super("showrunner-studio");
@@ -47,6 +49,17 @@ export class StudioDB extends Dexie {
       learnedTemplates: "id, showId, sourceEpisodeId, genre, createdAt",
       episodePromptRuns: "id, showId, episodeId, createdAt",
     });
+    // v4: persist generated crossover episodes.
+    this.version(4).stores({
+      shows: "id, title, updatedAt",
+      sets: "id, showId, name, updatedAt",
+      characters: "id, showId, name, role, updatedAt",
+      episodes: "id, showId, order, updatedAt",
+      scenes: "id, episodeId, order, targetSetId, updatedAt",
+      learnedTemplates: "id, showId, sourceEpisodeId, genre, createdAt",
+      episodePromptRuns: "id, showId, episodeId, createdAt",
+      crossovers: "id, createdAt",
+    });
   }
 }
 
@@ -67,10 +80,11 @@ export interface ProjectSnapshot {
   scenes: SceneEntity[];
   learnedTemplates?: LearnedTemplate[];
   episodePromptRuns?: EpisodePromptRun[];
+  crossovers?: StoredCrossover[];
 }
 
 export async function exportProjectSnapshot(): Promise<ProjectSnapshot> {
-  const [shows, sets, characters, episodes, scenes, learnedTemplates, episodePromptRuns] = await Promise.all([
+  const [shows, sets, characters, episodes, scenes, learnedTemplates, episodePromptRuns, crossovers] = await Promise.all([
     db.shows.toArray(),
     db.sets.toArray(),
     db.characters.toArray(),
@@ -78,12 +92,13 @@ export async function exportProjectSnapshot(): Promise<ProjectSnapshot> {
     db.scenes.toArray(),
     db.learnedTemplates.toArray(),
     db.episodePromptRuns.toArray(),
+    db.crossovers.toArray(),
   ]);
-  return { version: 1, exportedAt: Date.now(), shows, sets, characters, episodes, scenes, learnedTemplates, episodePromptRuns };
+  return { version: 1, exportedAt: Date.now(), shows, sets, characters, episodes, scenes, learnedTemplates, episodePromptRuns, crossovers };
 }
 
 export async function importProjectSnapshot(snapshot: ProjectSnapshot, mode: "merge" | "replace" = "merge") {
-  await db.transaction("rw", [db.shows, db.sets, db.characters, db.episodes, db.scenes, db.learnedTemplates, db.episodePromptRuns], async () => {
+  await db.transaction("rw", [db.shows, db.sets, db.characters, db.episodes, db.scenes, db.learnedTemplates, db.episodePromptRuns, db.crossovers], async () => {
     if (mode === "replace") {
       await Promise.all([
         db.shows.clear(),
@@ -93,6 +108,7 @@ export async function importProjectSnapshot(snapshot: ProjectSnapshot, mode: "me
         db.scenes.clear(),
         db.learnedTemplates.clear(),
         db.episodePromptRuns.clear(),
+        db.crossovers.clear(),
       ]);
     }
     await db.shows.bulkPut(snapshot.shows);
@@ -102,5 +118,6 @@ export async function importProjectSnapshot(snapshot: ProjectSnapshot, mode: "me
     await db.scenes.bulkPut(snapshot.scenes);
     if (snapshot.learnedTemplates?.length) await db.learnedTemplates.bulkPut(snapshot.learnedTemplates);
     if (snapshot.episodePromptRuns?.length) await db.episodePromptRuns.bulkPut(snapshot.episodePromptRuns);
+    if (snapshot.crossovers?.length) await db.crossovers.bulkPut(snapshot.crossovers);
   });
 }

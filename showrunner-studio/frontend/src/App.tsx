@@ -27,11 +27,12 @@ import { EpisodePromptEngine } from "./components/EpisodePromptEngine";
 import { MovieWorkspace } from "./components/MovieWorkspace";
 import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
 const ImportPanel = lazy(() => import("./components/ImportPanel").then((m) => ({ default: m.ImportPanel })));
+const CrossoverStudio = lazy(() => import("./components/CrossoverStudio").then((m) => ({ default: m.CrossoverStudio })));
 import { SettingsModal } from "./components/SettingsModal";
 import { Button, Field, Modal, TextInput } from "./components/ui";
 import { finalizeEpisode } from "./lib/templateLearning";
 
-type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | null;
+type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | "crossover" | null;
 
 // Top-bar workspace modes. Episode compiles the whole episode into prompt
 // cards (center takeover); the three scene modes drive the right rail.
@@ -321,6 +322,7 @@ export default function App() {
             onOpenShowBible={() => setModal("bible")}
             onOpenImport={() => setModal("import")}
             onOpenAiLab={() => setModal("ailab")}
+            onOpenCrossover={() => setModal("crossover")}
             onOpenTemplates={() => setModal("templates")}
             templateCount={templateList.length}
             onFinalizeEpisode={finalizeEpisodeHandler}
@@ -447,6 +449,11 @@ export default function App() {
             currentScriptText={currentScriptText}
             learnedTemplates={templateList}
           />
+        </Suspense>
+      )}
+      {modal === "crossover" && (
+        <Suspense fallback={null}>
+          <CrossoverStudio open onClose={() => setModal(null)} shows={showList} />
         </Suspense>
       )}
       {modal === "import" && (
