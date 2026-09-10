@@ -1,15 +1,7 @@
 #!/bin/bash
-# Serve the Script Studio static app (vanilla HTML/CSS/JS, ES modules).
+# Repo entrypoint → Showrunner Studio (FastAPI backend + Vite/React frontend).
+# The launcher lives in showrunner-studio/start.sh; this just delegates to it so
+# `./start.sh` from the repo root still works. The old "Script Studio" prototype
+# has been removed.
 set -e
-
-cd "$(dirname "$0")"
-
-APP_PORT="${APP_PORT:-3001}"
-
-if [ -f /usr/local/lib/workshop-devguard.sh ]; then
-    source /usr/local/lib/workshop-devguard.sh
-    devguard_acquire "$APP_PORT"
-fi
-
-echo "Serving Script Studio on port $APP_PORT ..."
-python3 -m http.server "$APP_PORT" --bind 0.0.0.0
+exec "$(dirname "$0")/showrunner-studio/start.sh" "$@"

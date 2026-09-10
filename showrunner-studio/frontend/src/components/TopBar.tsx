@@ -103,15 +103,6 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible, 
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        <a
-          href="/legacy/public/"
-          target="_blank"
-          rel="noreferrer"
-          title="Open the old Script Studio prototype (archived, no longer maintained)"
-          className="hidden shrink-0 rounded-md px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:bg-neutral-900 hover:text-neutral-400 sm:inline-block"
-        >
-          Old version
-        </a>
         <Button variant="primary" onClick={onNewShow} aria-label="New show">
           <Plus size={13} strokeWidth={2.5} />
           <span className="hidden sm:inline">New Show</span>
