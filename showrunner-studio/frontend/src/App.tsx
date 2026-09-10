@@ -1,6 +1,6 @@
 // App.tsx — Showrunner Studio shell: selection state, live Dexie queries,
 // three-pane layout (tree · script editor · export rails) and modals.
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import clsx from "clsx";
 import { Clapperboard, FileStack, Film, MonitorPlay, Plus, Tv, Video, WandSparkles } from "lucide-react";
@@ -18,14 +18,15 @@ import {
 import type { CharacterEntity, EpisodeEntity, LearnedTemplate, SceneEntity, SetEntity, ShowKind, ShowMeta } from "./types";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
-import { CritiquePanel } from "./components/CritiquePanel";
+// Lazy-loaded heavy modals — deferred out of the initial bundle until opened.
+const CritiquePanel = lazy(() => import("./components/CritiquePanel").then((m) => ({ default: m.CritiquePanel })));
 import { useConfirm } from "./components/ConfirmDialog";
 import { SceneEditor } from "./components/SceneEditor";
 import { OutputPanel, type OutputMode } from "./components/OutputPanel";
 import { EpisodePromptEngine } from "./components/EpisodePromptEngine";
 import { MovieWorkspace } from "./components/MovieWorkspace";
 import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
-import { ImportPanel } from "./components/ImportPanel";
+const ImportPanel = lazy(() => import("./components/ImportPanel").then((m) => ({ default: m.ImportPanel })));
 import { SettingsModal } from "./components/SettingsModal";
 import { Button, Field, Modal, TextInput } from "./components/ui";
 import { finalizeEpisode } from "./lib/templateLearning";
@@ -435,28 +436,35 @@ export default function App() {
       )}
       <SettingsModal open={modal === "settings"} onClose={() => setModal(null)} />
       <ShowBibleModal open={modal === "bible"} onClose={() => setModal(null)} show={show} />
-      <CritiquePanel
-        open={modal === "ailab"}
-        onClose={() => setModal(null)}
-        showTitle={show?.title ?? null}
-        showGenre={show?.genre ?? null}
-        showBibleText={show?.premise?.trim() || null}
-        currentScriptText={currentScriptText}
-        learnedTemplates={templateList}
-      />
-      <ImportPanel
-        key={modal === "import" ? "open" : "closed"}
-        open={modal === "import"}
-        onClose={() => setModal(null)}
-        show={show}
-        sets={setList}
-        characters={characterList}
-        onImported={(showId, episodeId, sceneId) => {
-          setSelectedShowId(showId);
-          if (episodeId) setSelectedEpisodeId(episodeId);
-          if (sceneId) setSelectedSceneId(sceneId);
-        }}
-      />
+      {modal === "ailab" && (
+        <Suspense fallback={null}>
+          <CritiquePanel
+            open
+            onClose={() => setModal(null)}
+            showTitle={show?.title ?? null}
+            showGenre={show?.genre ?? null}
+            showBibleText={show?.premise?.trim() || null}
+            currentScriptText={currentScriptText}
+            learnedTemplates={templateList}
+          />
+        </Suspense>
+      )}
+      {modal === "import" && (
+        <Suspense fallback={null}>
+          <ImportPanel
+            open
+            onClose={() => setModal(null)}
+            show={show}
+            sets={setList}
+            characters={characterList}
+            onImported={(showId, episodeId, sceneId) => {
+              setSelectedShowId(showId);
+              if (episodeId) setSelectedEpisodeId(episodeId);
+              if (sceneId) setSelectedSceneId(sceneId);
+            }}
+          />
+        </Suspense>
+      )}
       <FinalizeResultModal result={finalizeResult} onClose={() => setFinalizeResult(null)} />
       <Modal open={!!finalizeError} onClose={() => setFinalizeError(null)} title="Couldn't finalize episode">
         <div className="space-y-3 p-4">

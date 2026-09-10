@@ -298,20 +298,8 @@ Use these exact character ids when referencing dialogue speakers: {[c.id for c i
 """
 
 
-@app.post("/api/generate-scene", response_model=GenerateSceneResponse)
-async def generate_scene(req: GenerateSceneRequest):
-    prompt = build_prompt(req)
-    text = llm_generate(req.provider, SYSTEM_INSTRUCTIONS, prompt, max_tokens=8192).strip()
-    # Strip accidental markdown fences.
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=502, detail=f"Model did not return valid JSON: {e}. Raw: {text[:500]}")
-
+def _parse_scene(text: str) -> GenerateSceneResponse:
+    data = json.loads(_strip_json_fences(text))
     return GenerateSceneResponse(
         scene_name=data.get("scene_name", "Untitled Scene"),
         action=data.get("action", ""),
@@ -325,6 +313,53 @@ async def generate_scene(req: GenerateSceneRequest):
         ],
         scene_notes=data.get("scene_notes", ""),
     )
+
+
+@app.post("/api/generate-scene", response_model=GenerateSceneResponse)
+async def generate_scene(req: GenerateSceneRequest):
+    """Synchronous scene generation (kept for direct use / small models)."""
+    text = llm_generate(req.provider, SYSTEM_INSTRUCTIONS, build_prompt(req), max_tokens=8192)
+    try:
+        return _parse_scene(text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502, detail=f"Model did not return valid JSON: {e}. Raw: {text[:500]}")
+
+
+_scene_jobs: dict[str, dict] = {}
+
+
+@app.post("/api/generate-scene/start")
+async def generate_scene_start(req: GenerateSceneRequest):
+    """Async scene generation — matches the start/poll pattern of the other
+    long generations so slow models don't trip a reverse-proxy timeout."""
+    job_id = uuid.uuid4().hex
+    _evict_jobs(_scene_jobs)
+    _scene_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
+
+    def run_job():
+        try:
+            text = llm_generate(req.provider, SYSTEM_INSTRUCTIONS, build_prompt(req), max_tokens=8192)
+            try:
+                parsed = _parse_scene(text)
+            except json.JSONDecodeError as e:
+                _scene_jobs[job_id] = {"status": "error", "result": None, "error": f"Model did not return valid JSON: {e}. Raw: {text[:500]}"}
+                return
+            _scene_jobs[job_id] = {"status": "done", "result": parsed.model_dump(), "error": None}
+        except HTTPException as e:
+            _scene_jobs[job_id] = {"status": "error", "result": None, "error": str(e.detail)}
+        except Exception as e:
+            _scene_jobs[job_id] = {"status": "error", "result": None, "error": f"Unexpected error: {e}"}
+
+    threading.Thread(target=run_job, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/generate-scene/status/{job_id}")
+async def generate_scene_status(job_id: str):
+    job = _scene_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job id.")
+    return job
 
 
 @app.get("/api/health")

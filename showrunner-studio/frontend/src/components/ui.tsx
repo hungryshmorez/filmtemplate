@@ -1,5 +1,5 @@
 // ui.tsx — Shared studio primitives: buttons, fields, modal, clipboard helper.
-import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import clsx from "clsx";
 import { Check, Copy, X } from "lucide-react";
 
@@ -145,6 +145,48 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, subtitle, children, wide }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Escape to close, focus into the dialog on open, restore focus on close,
+  // and trap Tab within the panel while open.
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusables = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      ).filter((el) => el.offsetParent !== null);
+    (focusables()[0] ?? panel)?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      previouslyFocused?.focus?.();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
     <div
@@ -155,8 +197,10 @@ export function Modal({ open, onClose, title, subtitle, children, wide }: ModalP
       aria-label={title}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className={clsx(
-          "flex max-h-[88vh] w-full flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl shadow-black/70",
+          "flex max-h-[88vh] w-full flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl shadow-black/70 focus:outline-none",
           wide ? "max-w-3xl" : "max-w-md"
         )}
         onMouseDown={(e) => e.stopPropagation()}

@@ -41,6 +41,19 @@ interface AiScenePanelProps {
 
 type Status = "idle" | "loading" | "done" | "error";
 
+async function pollScene(jobId: string, maxMs = 5 * 60 * 1000): Promise<GeneratedScene> {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const res = await fetch(`/api/generate-scene/status/${jobId}`);
+    if (!res.ok) throw new Error(`Job status request failed (${res.status})`);
+    const job = await res.json();
+    if (job.status === "done") return job.result as GeneratedScene;
+    if (job.status === "error") throw new Error(job.error || "Scene generation failed.");
+  }
+  throw new Error("Timed out waiting for scene generation.");
+}
+
 export function AiScenePanel({ show, episode, scene, sets, characters, onApplied }: AiScenePanelProps) {
   const [concept, setConcept] = useState("");
   const [chosenSetId, setChosenSetId] = useState<string>(scene?.targetSetId ?? "");
@@ -92,7 +105,7 @@ export function AiScenePanel({ show, episode, scene, sets, characters, onApplied
         .map((id) => characters.find((c) => c.id === id))
         .filter((c): c is CharacterEntity => Boolean(c));
 
-      const res = await fetch("/api/generate-scene", {
+      const startRes = await fetch("/api/generate-scene/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -121,11 +134,12 @@ export function AiScenePanel({ show, episode, scene, sets, characters, onApplied
           provider: toProviderConfig(),
         }),
       });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        throw new Error(`API responded ${res.status}${detail ? ` — ${detail.slice(0, 200)}` : ""}`);
+      if (!startRes.ok) {
+        const detail = await startRes.json().catch(() => ({}));
+        throw new Error(detail?.detail || `API responded ${startRes.status}`);
       }
-      const data = (await res.json()) as GeneratedScene;
+      const { job_id } = await startRes.json();
+      const data = await pollScene(job_id);
       setResult(data);
       setStatus("done");
     } catch (err) {
