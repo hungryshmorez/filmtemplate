@@ -35,6 +35,20 @@ app.add_middleware(
 # Single place to pin the generation model instead of repeating the literal.
 MODEL = "gemini-3.8-flash"
 
+# Universal storytelling law applied to every generation — Matt Stone & Trey
+# Parker's "therefore / but" rule. Appended to each generative system prompt so
+# beats are always chained by cause and effect, never "and then."
+CAUSALITY_RULE = """
+
+CAUSALITY LAW (non-negotiable) — the "therefore / but" rule:
+- Every beat must connect to the next through cause and effect. NEVER "and then."
+- Each beat is either a direct CONSEQUENCE of the previous one (link it with an implied \
+"therefore ...") or a COMPLICATION that derails the expected path (an implied "but ..."). \
+No beat may simply follow another as an itinerary of events.
+- If two beats are only glued by an unspoken "and then," rewrite so the outcome of the first \
+DIRECTLY forces the second. Stakes should escalate as each domino tips the next.
+- The finished sequence must feel inevitable and causally driven, not arbitrary."""
+
 
 def _evict_jobs(store: dict, cap: int = 100) -> None:
     """Bound an in-memory job store so long uptime doesn't leak memory.
@@ -257,7 +271,7 @@ downstream parser splits these clauses automatically.
 characters or sets.
 - Reflect the show's genre, tone, and premise in pacing and word choice.
 - Return ONLY valid JSON matching the requested schema. No markdown fences, no commentary.
-"""
+""" + CAUSALITY_RULE
 
 
 def build_prompt(req: GenerateSceneRequest) -> str:
@@ -648,6 +662,12 @@ must feel like messy, erratic humans, not like no-skin-in-the-game algorithmic m
 Cross out any line a network notes-processor could have written and say what a real person \
 would say instead.
 
+5. CAUSALITY AUDIT — the "therefore / but" test. Walk the story beat by beat and hunt for every \
+transition that is really just "and then" — a scene that follows the previous one without being \
+caused by it. Each beat must be a direct CONSEQUENCE ("therefore ...") or a COMPLICATION ("but ...") \
+of the one before. Flag every "and then" seam, name the missing cause, and if the script is an \
+itinerary of events rather than a chain of escalating consequences, say so and dock it hard.
+
 OUTPUT FORMAT (this exact structure, markdown):
 
 ## COLD OPEN JUDGMENT
@@ -702,7 +722,7 @@ The want leaks out through action.
 something revealing.
 
 Output ONLY the script itself in screenplay format. No preamble, no explanation of what you did, \
-no closing notes."""
+no closing notes.""" + CAUSALITY_RULE
 
 SURGICAL_SYSTEM_PROMPT = """\
 You are the SURGICAL SCRIPT OVERHAUL unit. You take an existing script and perform a precise, \
@@ -728,6 +748,12 @@ invaded by it.
 4. SUBTEXT EXTRACTION. Wherever a character directly states an emotion or a want, remove the \
 statement and rebuild the beat so the want leaks out sideways — through what they do with \
 their hands, what they refuse to say, the joke they hide behind. Never announce subtext.
+
+5. CAUSALITY REPAIR — the "therefore / but" rule. Find every seam where one scene merely follows \
+another ("and then") and re-wire it so the outcome of the first scene DIRECTLY causes the next: a \
+CONSEQUENCE ("therefore ...") or a COMPLICATION that derails it ("but ..."). Do not add new plot — \
+use the existing beats, but reorder/rejoin them so each one forces the next and the tension never \
+goes slack.
 
 OUTPUT: the fully rewritten script in clean screenplay format, prose only. Do NOT summarize \
 changes. Do NOT add commentary before or after. Output the script and nothing else."""
@@ -1004,6 +1030,10 @@ across the whole prompt. Push overflow into the next prompt.
 - Fold ALL cinematic detail into the three fields below — camera movement, shot framing, lens, \
 transitions in/out of the clip, and any character-consistency / visual-DNA cues. Do not omit them; \
 there is no separate camera or transition field.
+- CAUSALITY ("therefore / but"): the prompts are a chain, not a list. Each 15s beat must be caused \
+by the one before it — a CONSEQUENCE ("therefore ...") or a COMPLICATION that derails it \
+("but ..."). Never string beats together as "and then"; each clip's action should set up or force \
+the next, so the sequence escalates and feels inevitable.
 
 EACH PROMPT OBJECT:
 - "scene": one rich sentence — mood + location/set + lighting and color palette + atmosphere. You \
