@@ -20,12 +20,41 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(title="Showrunner Studio Backend")
 
+# CORS defaults to open (local-first dev). Set CORS_ALLOW_ORIGINS to a
+# comma-separated allowlist to lock it down for a real deployment.
+_cors_env = os.environ.get("CORS_ALLOW_ORIGINS", "*").strip()
+_cors_origins = ["*"] if _cors_env in ("", "*") else [o.strip() for o in _cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Single place to pin the generation model instead of repeating the literal.
+MODEL = "gemini-3.8-flash"
+
+# Universal storytelling law applied to every generation — Matt Stone & Trey
+# Parker's "therefore / but" rule. Appended to each generative system prompt so
+# beats are always chained by cause and effect, never "and then."
+CAUSALITY_RULE = """
+
+CAUSALITY LAW (non-negotiable) — the "therefore / but" rule:
+- Every beat must connect to the next through cause and effect. NEVER "and then."
+- Each beat is either a direct CONSEQUENCE of the previous one (link it with an implied \
+"therefore ...") or a COMPLICATION that derails the expected path (an implied "but ..."). \
+No beat may simply follow another as an itinerary of events.
+- If two beats are only glued by an unspoken "and then," rewrite so the outcome of the first \
+DIRECTLY forces the second. Stakes should escalate as each domino tips the next.
+- The finished sequence must feel inevitable and causally driven, not arbitrary."""
+
+
+def _evict_jobs(store: dict, cap: int = 100) -> None:
+    """Bound an in-memory job store so long uptime doesn't leak memory.
+    Dicts preserve insertion order, so the first keys are the oldest jobs."""
+    while len(store) > cap:
+        store.pop(next(iter(store)), None)
 
 # --- Legacy "Script Studio" app (old, unrelated prototype at the project
 # root) — kept reachable at /legacy/public/ for reference only. Showrunner
@@ -54,7 +83,9 @@ def get_client():
     if _client is None:
         from google import genai
 
-        api_key = os.environ.get("PROJEC_GOOGLE_API_KEY")
+        # Prefer the correctly-spelled name; fall back to the historical
+        # misspelling so an already-deployed secret keeps working.
+        api_key = os.environ.get("PROJECT_GOOGLE_API_KEY") or os.environ.get("PROJEC_GOOGLE_API_KEY")
         if not api_key:
             raise HTTPException(status_code=500, detail="Gemini connector not configured.")
         _client = genai.Client(api_key=api_key)
@@ -97,6 +128,91 @@ def generate_with_retry(client, *, model: str, contents, attempts: int = 3, conf
     raise HTTPException(status_code=500, detail="Unknown error calling Gemini.")
 
 
+# --- Multi-provider LLM dispatch ------------------------------------------
+#
+# Every generation endpoint accepts an optional per-request ProviderConfig so
+# users can bring their own key for Anthropic, OpenAI, Google (Gemini), or any
+# OpenAI-compatible / local server (Ollama, LM Studio, vLLM, OpenRouter, ...).
+# When no config is supplied we fall back to the Gemini env key, preserving the
+# original behavior. Provider SDKs are imported lazily so the server boots even
+# if a given SDK isn't installed.
+
+
+class ProviderConfig(BaseModel):
+    provider: str = "google"  # google | anthropic | openai | openai_compatible
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None  # required for openai_compatible / local
+
+
+DEFAULT_MODELS = {
+    "google": MODEL,
+    "anthropic": "claude-3-5-sonnet-latest",
+    "openai": "gpt-4o-mini",
+    "openai_compatible": "gpt-4o-mini",
+}
+
+
+def llm_generate(cfg: "Optional[ProviderConfig]", system: str, user: str, max_tokens: int = 8192) -> str:
+    """Route one (system, user) generation to the configured provider and return text."""
+    provider = (cfg.provider if cfg and cfg.provider else "google").lower()
+    model = (cfg.model if cfg and cfg.model else None) or DEFAULT_MODELS.get(provider, MODEL)
+
+    if provider == "google":
+        if cfg and cfg.api_key:
+            from google import genai
+
+            client = genai.Client(api_key=cfg.api_key)
+        else:
+            client = get_client()  # env key fallback
+        resp = generate_with_retry(
+            client, model=model, contents=[system, user], config={"max_output_tokens": max_tokens}
+        )
+        return resp.text or ""
+
+    if provider == "anthropic":
+        if not (cfg and cfg.api_key):
+            raise HTTPException(status_code=400, detail="Anthropic requires an API key (set it in Settings).")
+        try:
+            from anthropic import Anthropic
+        except ImportError as e:
+            raise HTTPException(status_code=500, detail="Anthropic SDK is not installed on the server.") from e
+        client = Anthropic(api_key=cfg.api_key)
+        try:
+            msg = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+        except Exception as e:  # noqa: BLE001 - surface provider errors uniformly
+            raise HTTPException(status_code=502, detail=f"Anthropic request failed: {e}") from e
+        return "".join(getattr(block, "text", "") for block in msg.content)
+
+    if provider in ("openai", "openai_compatible"):
+        base_url = cfg.base_url if cfg and cfg.base_url else None
+        if provider == "openai_compatible" and not base_url:
+            raise HTTPException(status_code=400, detail="Local / OpenAI-compatible provider requires a Base URL in Settings.")
+        try:
+            from openai import OpenAI
+        except ImportError as e:
+            raise HTTPException(status_code=500, detail="OpenAI SDK is not installed on the server.") from e
+        # Local servers frequently ignore the key; send a placeholder so the SDK doesn't error.
+        api_key = (cfg.api_key if cfg else None) or "not-needed"
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                max_tokens=max_tokens,
+            )
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"{provider} request failed: {e}") from e
+        return resp.choices[0].message.content or ""
+
+    raise HTTPException(status_code=400, detail=f"Unknown provider '{provider}'.")
+
+
 # --- Request/response models ----------------------------------------------
 
 
@@ -125,6 +241,7 @@ class GenerateSceneRequest(BaseModel):
     characters: list[CharacterBrief] = Field(default_factory=list)
     scene_concept: str
     episode_title: str = ""
+    provider: Optional[ProviderConfig] = None
 
 
 class DialogueLineOut(BaseModel):
@@ -154,7 +271,7 @@ downstream parser splits these clauses automatically.
 characters or sets.
 - Reflect the show's genre, tone, and premise in pacing and word choice.
 - Return ONLY valid JSON matching the requested schema. No markdown fences, no commentary.
-"""
+""" + CAUSALITY_RULE
 
 
 def build_prompt(req: GenerateSceneRequest) -> str:
@@ -195,22 +312,8 @@ Use these exact character ids when referencing dialogue speakers: {[c.id for c i
 """
 
 
-@app.post("/api/generate-scene", response_model=GenerateSceneResponse)
-async def generate_scene(req: GenerateSceneRequest):
-    client = get_client()
-    prompt = build_prompt(req)
-    response = generate_with_retry(client, model="gemini-3.8-flash", contents=[SYSTEM_INSTRUCTIONS, prompt])
-    text = (response.text or "").strip()
-    # Strip accidental markdown fences.
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=502, detail=f"Model did not return valid JSON: {e}. Raw: {text[:500]}")
-
+def _parse_scene(text: str) -> GenerateSceneResponse:
+    data = json.loads(_strip_json_fences(text))
     return GenerateSceneResponse(
         scene_name=data.get("scene_name", "Untitled Scene"),
         action=data.get("action", ""),
@@ -224,6 +327,53 @@ async def generate_scene(req: GenerateSceneRequest):
         ],
         scene_notes=data.get("scene_notes", ""),
     )
+
+
+@app.post("/api/generate-scene", response_model=GenerateSceneResponse)
+async def generate_scene(req: GenerateSceneRequest):
+    """Synchronous scene generation (kept for direct use / small models)."""
+    text = llm_generate(req.provider, SYSTEM_INSTRUCTIONS, build_prompt(req), max_tokens=8192)
+    try:
+        return _parse_scene(text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502, detail=f"Model did not return valid JSON: {e}. Raw: {text[:500]}")
+
+
+_scene_jobs: dict[str, dict] = {}
+
+
+@app.post("/api/generate-scene/start")
+async def generate_scene_start(req: GenerateSceneRequest):
+    """Async scene generation — matches the start/poll pattern of the other
+    long generations so slow models don't trip a reverse-proxy timeout."""
+    job_id = uuid.uuid4().hex
+    _evict_jobs(_scene_jobs)
+    _scene_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
+
+    def run_job():
+        try:
+            text = llm_generate(req.provider, SYSTEM_INSTRUCTIONS, build_prompt(req), max_tokens=8192)
+            try:
+                parsed = _parse_scene(text)
+            except json.JSONDecodeError as e:
+                _scene_jobs[job_id] = {"status": "error", "result": None, "error": f"Model did not return valid JSON: {e}. Raw: {text[:500]}"}
+                return
+            _scene_jobs[job_id] = {"status": "done", "result": parsed.model_dump(), "error": None}
+        except HTTPException as e:
+            _scene_jobs[job_id] = {"status": "error", "result": None, "error": str(e.detail)}
+        except Exception as e:
+            _scene_jobs[job_id] = {"status": "error", "result": None, "error": f"Unexpected error: {e}"}
+
+    threading.Thread(target=run_job, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/generate-scene/status/{job_id}")
+async def generate_scene_status(job_id: str):
+    job = _scene_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job id.")
+    return job
 
 
 @app.get("/api/health")
@@ -271,6 +421,7 @@ class ExistingCatalog(BaseModel):
 class ImportParseRequest(BaseModel):
     combined_text: str
     existing: ExistingCatalog = Field(default_factory=ExistingCatalog)
+    provider: Optional[ProviderConfig] = None
 
 
 class ParsedSet(BaseModel):
@@ -404,16 +555,13 @@ async def import_parse_start(req: ImportParseRequest):
         raise HTTPException(status_code=400, detail="No text provided to parse.")
 
     job_id = uuid.uuid4().hex
+    _evict_jobs(_import_jobs)
     _import_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
 
     def run_job():
         try:
-            client = get_client()
             prompt = build_import_prompt(req)
-            response = generate_with_retry(
-                client, model="gemini-3.8-flash", contents=[IMPORT_SYSTEM_INSTRUCTIONS, prompt]
-            )
-            text = _strip_json_fences(response.text or "")
+            text = _strip_json_fences(llm_generate(req.provider, IMPORT_SYSTEM_INSTRUCTIONS, prompt, max_tokens=16384))
             try:
                 data = json.loads(text)
             except json.JSONDecodeError as e:
@@ -456,10 +604,8 @@ async def import_parse(req: ImportParseRequest):
     if not req.combined_text.strip():
         raise HTTPException(status_code=400, detail="No text provided to parse.")
 
-    client = get_client()
     prompt = build_import_prompt(req)
-    response = generate_with_retry(client, model="gemini-3.8-flash", contents=[IMPORT_SYSTEM_INSTRUCTIONS, prompt])
-    text = _strip_json_fences(response.text or "")
+    text = _strip_json_fences(llm_generate(req.provider, IMPORT_SYSTEM_INSTRUCTIONS, prompt, max_tokens=16384))
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
@@ -516,6 +662,12 @@ must feel like messy, erratic humans, not like no-skin-in-the-game algorithmic m
 Cross out any line a network notes-processor could have written and say what a real person \
 would say instead.
 
+5. CAUSALITY AUDIT — the "therefore / but" test. Walk the story beat by beat and hunt for every \
+transition that is really just "and then" — a scene that follows the previous one without being \
+caused by it. Each beat must be a direct CONSEQUENCE ("therefore ...") or a COMPLICATION ("but ...") \
+of the one before. Flag every "and then" seam, name the missing cause, and if the script is an \
+itinerary of events rather than a chain of escalating consequences, say so and dock it hard.
+
 OUTPUT FORMAT (this exact structure, markdown):
 
 ## COLD OPEN JUDGMENT
@@ -570,7 +722,7 @@ The want leaks out through action.
 something revealing.
 
 Output ONLY the script itself in screenplay format. No preamble, no explanation of what you did, \
-no closing notes."""
+no closing notes.""" + CAUSALITY_RULE
 
 SURGICAL_SYSTEM_PROMPT = """\
 You are the SURGICAL SCRIPT OVERHAUL unit. You take an existing script and perform a precise, \
@@ -596,6 +748,12 @@ invaded by it.
 4. SUBTEXT EXTRACTION. Wherever a character directly states an emotion or a want, remove the \
 statement and rebuild the beat so the want leaks out sideways — through what they do with \
 their hands, what they refuse to say, the joke they hide behind. Never announce subtext.
+
+5. CAUSALITY REPAIR — the "therefore / but" rule. Find every seam where one scene merely follows \
+another ("and then") and re-wire it so the outcome of the first scene DIRECTLY causes the next: a \
+CONSEQUENCE ("therefore ...") or a COMPLICATION that derails it ("but ..."). Do not add new plot — \
+use the existing beats, but reorder/rejoin them so each one forces the next and the tension never \
+goes slack.
 
 OUTPUT: the fully rewritten script in clean screenplay format, prose only. Do NOT summarize \
 changes. Do NOT add commentary before or after. Output the script and nothing else."""
@@ -626,7 +784,6 @@ GENRE_NOTES: dict[str, str] = {
     "Action & Adventure": "Physical stakes and momentum are the spine — every set piece should advance character or plot, not just spectacle. Judge geography and stakes clarity: can the audience track where everyone is and what they lose if this goes wrong? Cut any lull that isn't earning a breather beat before the next escalation.",
     "Romance": "The relationship's obstacle (internal or external) must feel specific and earned, not manufactured misunderstanding. Track the push-pull rhythm scene to scene — attraction, friction, vulnerability — and judge whether the eventual turn is earned by specific beats rather than a genre-mandated timer running out.",
     "Horror": "Dread is a pacing discipline — judge the ratio of unease-building beats to release/scare beats, and whether the scare is earned by everything preceding it. The threat's rules (what it can/can't do, why now) must stay consistent; random rule-breaks for shock value kill audience trust.",
-    "Action-Adventure": "Physical stakes and momentum are the spine — every set piece should advance character or plot, not just spectacle.",
     "Live Action": "Judge groundedness: physical staging, blocking and practical logistics should read as filmable in the real world, not just conceptually cool. Flag anything that only works as an idea and falls apart when you imagine an actual crew and cast executing it on a real set.",
 }
 
@@ -660,6 +817,7 @@ class ExtractTemplateRequest(BaseModel):
     episodeTitle: str
     genre: Optional[str] = None
     episodeText: str = Field(..., description="Concatenated scene action + dialogue for the whole episode")
+    provider: Optional[ProviderConfig] = None
 
 
 TEMPLATE_EXTRACTION_SYSTEM_PROMPT = """\
@@ -717,18 +875,13 @@ async def extract_template_start(req: ExtractTemplateRequest):
         raise HTTPException(status_code=400, detail="No episode text to extract a template from.")
 
     job_id = uuid.uuid4().hex
+    _evict_jobs(_template_jobs)
     _template_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
 
     def run_job():
         try:
-            client = get_client()
             prompt = build_template_extraction_prompt(req)
-            response = generate_with_retry(
-                client,
-                model="gemini-3.8-flash",
-                contents=[TEMPLATE_EXTRACTION_SYSTEM_PROMPT, prompt],
-            )
-            text = _strip_json_fences(response.text or "")
+            text = _strip_json_fences(llm_generate(req.provider, TEMPLATE_EXTRACTION_SYSTEM_PROMPT, prompt, max_tokens=8192))
             try:
                 data = json.loads(text)
             except json.JSONDecodeError as e:
@@ -771,6 +924,7 @@ class CritiqueRequest(BaseModel):
     text: str = Field(..., description="The script / series text to critique")
     showTitle: Optional[str] = None
     genre: Optional[str] = None
+    provider: Optional[ProviderConfig] = None
 
 
 class WriteScriptRequest(BaseModel):
@@ -780,29 +934,26 @@ class WriteScriptRequest(BaseModel):
     targetLength: Optional[str] = Field(
         None, description='e.g. "cold open + 1 scene", "full pilot", "11-minute episode"'
     )
+    provider: Optional[ProviderConfig] = None
 
 
 class RewriteScriptRequest(BaseModel):
     script: str = Field(..., description="The existing script to overhaul")
     notes: Optional[str] = Field(None, description="Optional exec notes / focus areas to apply")
     genre: Optional[str] = None
+    provider: Optional[ProviderConfig] = None
 
 
-def _start_ai_job(prompt_builder):
+def _start_ai_job(cfg: "Optional[ProviderConfig]", system: str, user: str, max_tokens: int = 16384):
     """Shared job runner for long text generations (critique/write/rewrite)."""
     job_id = uuid.uuid4().hex
+    _evict_jobs(_ai_jobs)
     _ai_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
 
     def run_job():
         try:
-            client = get_client()
-            response = generate_with_retry(
-                client,
-                model="gemini-3.8-flash",
-                contents=[prompt_builder()],
-                config={"max_output_tokens": 16384},
-            )
-            _ai_jobs[job_id] = {"status": "done", "result": {"text": response.text or ""}, "error": None}
+            text = llm_generate(cfg, system, user, max_tokens)
+            _ai_jobs[job_id] = {"status": "done", "result": {"text": text}, "error": None}
         except HTTPException as e:
             _ai_jobs[job_id] = {"status": "error", "result": None, "error": str(e.detail)}
         except Exception as e:
@@ -829,11 +980,7 @@ async def critique_start(req: CritiqueRequest):
     if req.showTitle or req.genre:
         header = f"SHOW: {req.showTitle or 'Untitled'}\nGENRE: {req.genre or 'unknown'}\n\n"
     prompt = f"{header}THE SUBMISSION:\n\n{req.text.strip()}"
-
-    def builder():
-        return [CRITIQUE_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt]
-
-    return _start_ai_job(builder)
+    return _start_ai_job(req.provider, CRITIQUE_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt)
 
 
 @app.post("/api/write-script/start")
@@ -847,11 +994,7 @@ async def write_script_start(req: WriteScriptRequest):
         parts.append(f"\nSHOW BIBLE (canon — characters, world and rules must match this):\n\n{req.showBible.strip()}")
     parts.append(f"\nTHE IDEA:\n\n{req.idea.strip()}")
     prompt = "\n".join(parts)
-
-    def builder():
-        return [SCRIPT_ENGINE_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt]
-
-    return _start_ai_job(builder)
+    return _start_ai_job(req.provider, SCRIPT_ENGINE_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt)
 
 
 @app.post("/api/rewrite/start")
@@ -863,8 +1006,252 @@ async def rewrite_start(req: RewriteScriptRequest):
     if req.notes and req.notes.strip():
         parts.append(f"\nADDITIONAL EXEC NOTES (apply alongside the four operations):\n\n{req.notes.strip()}")
     prompt = "\n".join(parts)
+    return _start_ai_job(req.provider, SURGICAL_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt)
 
-    def builder():
-        return [SURGICAL_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt]
 
-    return _start_ai_job(builder)
+# --- Reference-format 15-second broadcast prompts --------------------------
+#
+# Interpret an episode's script/outline and emit self-contained generation
+# prompts, ONE PER 15 SECONDS, in the reference Scene / Dialogue / Action shape.
+# Seedance/Showrunner detail (camera movement, shot framing, transitions,
+# character-consistency cues) is folded INTO those three fields — everything the
+# downstream video generator needs lives in the prompt itself.
+
+REFERENCE_PROMPT_SYSTEM = """\
+You are a Broadcast Prompt Director. You convert a script, outline, or scene text into a sequence \
+of self-contained AI-video generation prompts — EXACTLY ONE PROMPT PER 15 SECONDS of runtime. \
+Each prompt is a standalone 15-second clip a video model can generate on its own.
+
+HARD RULES:
+- Each prompt covers ~15 seconds. Interpret the source and break it into 15s beats in story order.
+- At most 3 speaking/among characters per prompt (a take locks its cast).
+- Keep spoken dialogue to what a person can naturally say in 15 seconds — roughly 25 words total \
+across the whole prompt. Push overflow into the next prompt.
+- Fold ALL cinematic detail into the three fields below — camera movement, shot framing, lens, \
+transitions in/out of the clip, and any character-consistency / visual-DNA cues. Do not omit them; \
+there is no separate camera or transition field.
+- CAUSALITY ("therefore / but"): the prompts are a chain, not a list. Each 15s beat must be caused \
+by the one before it — a CONSEQUENCE ("therefore ...") or a COMPLICATION that derails it \
+("but ..."). Never string beats together as "and then"; each clip's action should set up or force \
+the next, so the sequence escalates and feels inevitable.
+
+EACH PROMPT OBJECT:
+- "scene": one rich sentence — mood + location/set + lighting and color palette + atmosphere. You \
+may weave in framing and transition context here too.
+- "dialogue": array of { "character": name, "delivery": short parenthetical delivery note, \
+"line": the spoken words }. Empty array if the clip has no dialogue.
+- "action": cinematic staging in active verbs, INCLUDING explicit camera movement / shot type and \
+the transition into or out of this 15s clip. This is the meat of the generation prompt.
+
+Return ONLY valid JSON, no markdown fences, no commentary, matching exactly:
+{ "prompts": [ { "scene": "...", "dialogue": [ { "character": "...", "delivery": "...", "line": "..." } ], "action": "..." } ] }
+"""
+
+
+class EpisodePromptsRequest(BaseModel):
+    script: str = Field(..., description="Episode script / outline / scene text to interpret")
+    showTitle: str = ""
+    genre: Optional[str] = None
+    premise: Optional[str] = None
+    targetPrompts: int = 8  # aim for this many 15s prompts (ignored when free)
+    free: bool = False  # produce as many 15s prompts as the script needs, uncapped
+    provider: Optional[ProviderConfig] = None
+
+
+_eprompt_jobs: dict[str, dict] = {}
+
+
+def build_episode_prompts_prompt(req: EpisodePromptsRequest) -> str:
+    length_rule = (
+        "Produce exactly as many 15-second prompts as the script naturally needs to cover ALL of its "
+        "content end to end — do not truncate, do not summarize; however many 15-second beats that is."
+        if req.free
+        else f"Produce about {max(1, req.targetPrompts)} prompts total (target {max(1, req.targetPrompts)}). "
+        "Select and condense the most important beats so the whole story reads coherently within that count."
+    )
+    header_bits = [f"SHOW: {req.showTitle or 'Untitled'}", f"GENRE: {req.genre or 'unknown'}"]
+    if req.premise and req.premise.strip():
+        header_bits.append(f"PREMISE: {req.premise.strip()}")
+    header = "\n".join(header_bits)
+    return f"""{header}
+
+LENGTH: {length_rule}
+
+SOURCE SCRIPT / OUTLINE TO INTERPRET:
+---
+{req.script.strip()}
+---
+
+Return the JSON object of 15-second prompts now."""
+
+
+@app.post("/api/episode-prompts/start")
+async def episode_prompts_start(req: EpisodePromptsRequest):
+    if not req.script.strip():
+        raise HTTPException(status_code=400, detail="No script provided to interpret into prompts.")
+
+    job_id = uuid.uuid4().hex
+    _evict_jobs(_eprompt_jobs)
+    _eprompt_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
+
+    def run_job():
+        try:
+            prompt = build_episode_prompts_prompt(req)
+            # Large / free runs can be long — give the model plenty of room.
+            text = _strip_json_fences(llm_generate(req.provider, REFERENCE_PROMPT_SYSTEM, prompt, max_tokens=32768))
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                _eprompt_jobs[job_id] = {
+                    "status": "error",
+                    "result": None,
+                    "error": f"Model did not return valid JSON: {e}. Raw (first 800 chars): {text[:800]}",
+                }
+                return
+            prompts = data.get("prompts", data if isinstance(data, list) else [])
+            _eprompt_jobs[job_id] = {"status": "done", "result": {"prompts": prompts}, "error": None}
+        except HTTPException as e:
+            _eprompt_jobs[job_id] = {"status": "error", "result": None, "error": str(e.detail)}
+        except Exception as e:
+            _eprompt_jobs[job_id] = {"status": "error", "result": None, "error": f"Unexpected error: {e}"}
+
+    threading.Thread(target=run_job, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/episode-prompts/status/{job_id}")
+async def episode_prompts_status(job_id: str):
+    job = _eprompt_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job id.")
+    return job
+
+
+# --- Crossover: bridge two shows into one generation-ready episode ----------
+#
+# Collides two show bibles into a single cohesive multi-scene episode, output
+# in the reference Scene / Dialogue / Action shape (one prompt per ~15 seconds),
+# grouped by scene, honoring the app's constraints (max 3 characters per beat,
+# ~25-word dialogue budget, camera/transitions folded into action, and the
+# "therefore / but" causality law).
+
+CROSSOVER_SYSTEM = """\
+You are an expert showrunner, script supervisor, and narrative architect. You bridge TWO distinct \
+shows into a SINGLE cohesive crossover episode.
+
+WORLD COLLISION:
+- Honor each show's world rules, aesthetic and character voices exactly. Keep every character's \
+established voice and behavior; let the friction between the two tones drive the comedy/dread.
+- Use ONLY the exact character names and set names supplied for the two shows. Do not invent new \
+named characters or sets. Reference characters as @Name and sets as #Set Name inside the action \
+where natural.
+
+GENERATION CONSTRAINTS (non-negotiable):
+- Break the episode into the requested number of SCENES, in story order.
+- Inside each scene, break the action into self-contained beats, ONE PER ~15 SECONDS. Each beat is \
+a standalone clip a video model can generate on its own.
+- At most 3 characters present per beat (a take locks its cast). If more are involved, split across \
+beats.
+- Keep spoken dialogue to what fits 15 seconds — roughly 25 words total per beat. Push overflow to \
+the next beat.
+- Fold ALL cinematic detail (camera movement, shot framing, transitions in/out of the clip, \
+character-consistency cues) INTO the action field. There is no separate camera or transition field.
+
+EACH BEAT OBJECT:
+- "scene": one rich sentence — mood + location/set + lighting and color palette + atmosphere.
+- "dialogue": array of { "character": exact name, "delivery": short delivery note, "line": spoken words }. Empty array if none.
+- "action": cinematic staging in active verbs, INCLUDING camera movement and any transition.
+
+Return ONLY valid JSON, no markdown fences, matching exactly:
+{ "title": "...", "logline": "...", "outline": ["Scene 1 — ...", "Scene 2 — ..."], \
+"scenes": [ { "name": "...", "prompts": [ { "scene": "...", "dialogue": [ { "character": "...", "delivery": "...", "line": "..." } ], "action": "..." } ] } ] }
+""" + CAUSALITY_RULE
+
+
+class CrossoverShow(BaseModel):
+    title: str = ""
+    genre: str = ""
+    premise: str = ""
+    characters: list[CharacterBrief] = Field(default_factory=list)
+    sets: list[SetBrief] = Field(default_factory=list)
+
+
+class CrossoverRequest(BaseModel):
+    show1: CrossoverShow
+    show2: CrossoverShow
+    premise: str = Field(..., description="Crossover catalyst / inciting incident")
+    tone: str = ""
+    scene_count: int = 3
+    provider: Optional[ProviderConfig] = None
+
+
+_crossover_jobs: dict[str, dict] = {}
+
+
+def _render_show_bible(show: CrossoverShow, label: str) -> str:
+    chars = "\n".join(
+        f"  * {c.name} ({c.role}, {c.age} {c.gender}): visual={c.visual_description} | voice={c.voice_description}"
+        for c in show.characters
+    ) or "  * (none registered)"
+    sets = "\n".join(f"  * #{s.name} — {s.time_of_day} — {s.description}" for s in show.sets) or "  * (none registered)"
+    return (
+        f"[{label}]\n"
+        f"- Title: {show.title}\n"
+        f"- Genre / Aesthetic: {show.genre}\n"
+        f"- Premise & World Rules: {show.premise}\n"
+        f"- Characters:\n{chars}\n"
+        f"- Sets:\n{sets}"
+    )
+
+
+def build_crossover_prompt(req: CrossoverRequest) -> str:
+    n = max(1, req.scene_count)
+    return f"""{_render_show_bible(req.show1, "SHOW 1 BIBLE")}
+
+{_render_show_bible(req.show2, "SHOW 2 BIBLE")}
+
+[CROSSOVER PREMISE & INCITING INCIDENT]
+{req.premise.strip()}
+
+[TONE TARGET]
+{req.tone.strip() or "Play the two shows' tones against each other."}
+
+[LENGTH]
+Exactly {n} sequential scene{"s" if n != 1 else ""}. Give each scene a short evocative name and 3-6 fifteen-second beats.
+
+Write the crossover now and return the JSON object described in the system prompt."""
+
+
+@app.post("/api/crossover/start")
+async def crossover_start(req: CrossoverRequest):
+    if not req.premise.strip():
+        raise HTTPException(status_code=400, detail="No crossover premise provided.")
+
+    job_id = uuid.uuid4().hex
+    _evict_jobs(_crossover_jobs)
+    _crossover_jobs[job_id] = {"status": "pending", "result": None, "error": None, "created": time.time()}
+
+    def run_job():
+        try:
+            text = _strip_json_fences(llm_generate(req.provider, CROSSOVER_SYSTEM, build_crossover_prompt(req), max_tokens=32768))
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                _crossover_jobs[job_id] = {"status": "error", "result": None, "error": f"Model did not return valid JSON: {e}. Raw (first 800 chars): {text[:800]}"}
+                return
+            _crossover_jobs[job_id] = {"status": "done", "result": data, "error": None}
+        except HTTPException as e:
+            _crossover_jobs[job_id] = {"status": "error", "result": None, "error": str(e.detail)}
+        except Exception as e:
+            _crossover_jobs[job_id] = {"status": "error", "result": None, "error": f"Unexpected error: {e}"}
+
+    threading.Thread(target=run_job, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@app.get("/api/crossover/status/{job_id}")
+async def crossover_status(job_id: str):
+    job = _crossover_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job id.")
+    return job

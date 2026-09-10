@@ -1,8 +1,9 @@
 // TopBar.tsx — App header: show selector, new show, project JSON export/import.
 import { useRef, useState, type ChangeEvent } from "react";
-import { Clapperboard, Download, Plus, Upload } from "lucide-react";
+import { Clapperboard, Download, Plus, Settings, Upload } from "lucide-react";
 import type { ShowMeta } from "../types";
 import { exportProjectSnapshot, importProjectSnapshot, type ProjectSnapshot } from "../lib/db";
+import { useProviderSettings, PROVIDER_LABELS } from "../lib/providerSettings";
 import { Button, Chip, Modal, Select } from "./ui";
 
 interface TopBarProps {
@@ -11,6 +12,7 @@ interface TopBarProps {
   onSelectShow: (id: string) => void;
   onNewShow: () => void;
   onOpenShowBible: () => void;
+  onOpenSettings: () => void;
 }
 
 function downloadSnapshot(snapshot: ProjectSnapshot) {
@@ -24,7 +26,8 @@ function downloadSnapshot(snapshot: ProjectSnapshot) {
   URL.revokeObjectURL(url);
 }
 
-export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }: TopBarProps) {
+export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible, onOpenSettings }: TopBarProps) {
+  const provider = useProviderSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImport, setPendingImport] = useState<ProjectSnapshot | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -100,15 +103,6 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        <a
-          href="/legacy/public/"
-          target="_blank"
-          rel="noreferrer"
-          title="Open the old Script Studio prototype (archived, no longer maintained)"
-          className="hidden shrink-0 rounded-md px-2 py-1 text-[11px] text-neutral-600 transition-colors hover:bg-neutral-900 hover:text-neutral-400 sm:inline-block"
-        >
-          Old version
-        </a>
         <Button variant="primary" onClick={onNewShow} aria-label="New show">
           <Plus size={13} strokeWidth={2.5} />
           <span className="hidden sm:inline">New Show</span>
@@ -120,6 +114,10 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }
         <Button onClick={() => fileInputRef.current?.click()} aria-label="Import project JSON">
           <Upload size={13} />
           <span className="hidden md:inline">Import JSON</span>
+        </Button>
+        <Button onClick={onOpenSettings} aria-label="AI provider settings" title={`AI provider: ${PROVIDER_LABELS[provider.provider]}`}>
+          <Settings size={13} />
+          <span className="hidden lg:inline">AI</span>
         </Button>
         <input
           ref={fileInputRef}
@@ -153,7 +151,7 @@ export function TopBar({ shows, show, onSelectShow, onNewShow, onOpenShowBible }
               Replace everything
             </Button>
           </div>
-          <p className="text-[11px] leading-snug text-neutral-600">
+          <p className="text-[11px] leading-snug text-neutral-400">
             Merge keeps existing data and overwrites entries with the same ids. Replace wipes the local
             database first — export a backup if unsure.
           </p>

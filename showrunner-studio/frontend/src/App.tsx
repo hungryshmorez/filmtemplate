@@ -1,8 +1,9 @@
 // App.tsx — Showrunner Studio shell: selection state, live Dexie queries,
 // three-pane layout (tree · script editor · export rails) and modals.
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Clapperboard, Plus } from "lucide-react";
+import clsx from "clsx";
+import { Clapperboard, FileStack, Film, MonitorPlay, Plus, Tv, Video, WandSparkles } from "lucide-react";
 import { db } from "./lib/db";
 import {
   createEpisode,
@@ -14,19 +15,38 @@ import {
   updateEpisode,
   updateShow,
 } from "./lib/actions";
-import type { CharacterEntity, EpisodeEntity, LearnedTemplate, SceneEntity, SetEntity, ShowMeta } from "./types";
+import type { CharacterEntity, EpisodeEntity, LearnedTemplate, SceneEntity, SetEntity, ShowKind, ShowMeta } from "./types";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
-import { CritiquePanel } from "./components/CritiquePanel";
+// Lazy-loaded heavy modals — deferred out of the initial bundle until opened.
+const CritiquePanel = lazy(() => import("./components/CritiquePanel").then((m) => ({ default: m.CritiquePanel })));
 import { useConfirm } from "./components/ConfirmDialog";
 import { SceneEditor } from "./components/SceneEditor";
-import { OutputPanel } from "./components/OutputPanel";
+import { OutputPanel, type OutputMode } from "./components/OutputPanel";
+import { EpisodePromptEngine } from "./components/EpisodePromptEngine";
+import { MovieWorkspace } from "./components/MovieWorkspace";
 import { CharactersManager, LearnedTemplatesManager, SetsManager, ShowBibleModal } from "./components/CatalogModals";
-import { ImportPanel } from "./components/ImportPanel";
+const ImportPanel = lazy(() => import("./components/ImportPanel").then((m) => ({ default: m.ImportPanel })));
+const CrossoverStudio = lazy(() => import("./components/CrossoverStudio").then((m) => ({ default: m.CrossoverStudio })));
+import { SettingsModal } from "./components/SettingsModal";
+import { PromptLibrary } from "./components/PromptLibrary";
+import { SHOT_CATEGORIES, SHOT_FORMULA } from "./lib/cameraShots";
+import { TRANSITION_CATEGORIES } from "./lib/transitions";
 import { Button, Field, Modal, TextInput } from "./components/ui";
 import { finalizeEpisode } from "./lib/templateLearning";
 
-type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | null;
+type ModalKind = "newShow" | "sets" | "characters" | "bible" | "import" | "ailab" | "templates" | "settings" | "crossover" | "shots" | "transitions" | null;
+
+// Top-bar workspace modes. Episode compiles the whole episode into prompt
+// cards (center takeover); the three scene modes drive the right rail.
+type WorkspaceMode = "episode" | "showrunner" | "seedance" | "ai";
+
+const WORKSPACE_MODES: { id: WorkspaceMode; label: string; icon: typeof MonitorPlay }[] = [
+  { id: "episode", label: "Episode", icon: FileStack },
+  { id: "showrunner", label: "Showrunner", icon: MonitorPlay },
+  { id: "seedance", label: "Seedance", icon: Video },
+  { id: "ai", label: "AI Scene", icon: WandSparkles },
+];
 
 export default function App() {
   const confirm = useConfirm();
@@ -37,6 +57,16 @@ export default function App() {
   const [finalizingEpisodeId, setFinalizingEpisodeId] = useState<string | null>(null);
   const [finalizeResult, setFinalizeResult] = useState<LearnedTemplate | null>(null);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  // Which single pane is visible below the lg breakpoint (desktop shows all
+  // three at once). Keeps the window itself unscrollable at every width.
+  const [mobilePane, setMobilePane] = useState<"tree" | "editor" | "output">("editor");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("showrunner");
+
+  const pickMode = (m: WorkspaceMode) => {
+    setWorkspaceMode(m);
+    // On narrow screens jump to the pane that actually shows the chosen mode.
+    setMobilePane(m === "episode" ? "editor" : "output");
+  };
 
   // --- Live queries -----------------------------------------------------------
   const shows = useLiveQuery(() => db.shows.orderBy("updatedAt").reverse().toArray(), [], [] as ShowMeta[]);
@@ -61,7 +91,15 @@ export default function App() {
     [] as CharacterEntity[]
   );
   const learnedTemplates = useLiveQuery(
-    () => (selectedShowId ? db.learnedTemplates.where("showId").equals(selectedShowId).reverse().sortBy("createdAt") : Promise.resolve([] as LearnedTemplate[])),
+    () =>
+      selectedShowId
+        ? db.learnedTemplates
+            .where("showId")
+            .equals(selectedShowId)
+            // sortBy always ascends; reverse the resolved array for newest-first.
+            .sortBy("createdAt")
+            .then((list) => list.reverse())
+        : Promise.resolve([] as LearnedTemplate[]),
     [selectedShowId],
     [] as LearnedTemplate[]
   );
@@ -166,6 +204,9 @@ export default function App() {
   };
 
   const noShows = showList.length === 0;
+  // Movies are act-based, not episode/scene-based — they route to a distinct
+  // workspace and hide the TV-oriented workspace-mode bar.
+  const isMovie = (show?.kind ?? "series") === "movie";
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-neutral-950 text-neutral-200">
@@ -175,13 +216,76 @@ export default function App() {
         onSelectShow={setSelectedShowId}
         onNewShow={() => setModal("newShow")}
         onOpenShowBible={() => setModal("bible")}
+        onOpenSettings={() => setModal("settings")}
       />
+
+      {/* Movies are act-based: no TV workspace modes, just a type indicator. */}
+      {!noShows && isMovie && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-neutral-800 bg-neutral-900/60 px-3 py-1.5">
+          <Film size={12} className="text-amber-300" aria-hidden />
+          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-neutral-400">Movie — act-based structure</span>
+        </div>
+      )}
+
+      {/* Workspace mode toggle — the single source of truth for the active
+          workspace (Section 2). Episode takes over the center; the other three
+          drive the right rail. */}
+      {!noShows && !isMovie && (
+        <div role="tablist" aria-label="Workspace mode" className="flex shrink-0 items-center gap-1 border-b border-neutral-800 bg-neutral-900/60 px-1.5 py-1">
+          {WORKSPACE_MODES.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={workspaceMode === id}
+              onClick={() => pickMode(id)}
+              className={clsx(
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors",
+                workspaceMode === id
+                  ? "bg-amber-500/15 text-amber-200"
+                  : "text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200"
+              )}
+            >
+              <Icon size={12} aria-hidden />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Mobile pane switcher — desktop (lg+) shows panes side by side. */}
+      {!noShows && (
+        <div role="tablist" aria-label="Panes" className="flex shrink-0 gap-1 border-b border-neutral-800 bg-neutral-900/40 p-1 lg:hidden">
+          {(isMovie
+            ? ([["tree", "Project"], ["editor", "Movie"]] as const)
+            : workspaceMode === "episode"
+              ? ([["tree", "Project"], ["editor", "Prompts"]] as const)
+              : ([["tree", "Project"], ["editor", "Editor"], ["output", "Output"]] as const)
+          ).map(([pane, label]) => (
+            <button
+              key={pane}
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === pane}
+              onClick={() => setMobilePane(pane)}
+              className={clsx(
+                "flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors",
+                mobilePane === pane ? "bg-neutral-800 text-amber-200" : "text-neutral-400 hover:text-neutral-200"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {noShows ? (
         <WelcomeScreen onNewShow={() => setModal("newShow")} onImport={() => setModal("import")} />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar
+            className={clsx(mobilePane === "tree" ? "flex" : "hidden", "lg:flex")}
+            isMovie={isMovie}
             shows={showList}
             selectedShowId={selectedShowId}
             episodes={episodeList}
@@ -221,57 +325,88 @@ export default function App() {
             onOpenShowBible={() => setModal("bible")}
             onOpenImport={() => setModal("import")}
             onOpenAiLab={() => setModal("ailab")}
+            onOpenCrossover={() => setModal("crossover")}
+            onOpenShots={() => setModal("shots")}
+            onOpenTransitions={() => setModal("transitions")}
             onOpenTemplates={() => setModal("templates")}
             templateCount={templateList.length}
             onFinalizeEpisode={finalizeEpisodeHandler}
             finalizingEpisodeId={finalizingEpisodeId}
           />
 
-          {/* Script editor */}
-          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto border-neutral-800 lg:border-r">
-            {scene ? (
-              <SceneEditor
-                key={scene.id}
-                scene={scene}
+          {isMovie && show ? (
+            // Movies: act-based canonical editor + derived Episode Split; no rail.
+            <MovieWorkspace
+              className={clsx(mobilePane === "editor" ? "block" : "hidden", "lg:block")}
+              show={show}
+            />
+          ) : workspaceMode === "episode" ? (
+            // Episode mode: the prompt engine takes over the full center; no rail.
+            <EpisodePromptEngine
+              className={clsx(mobilePane === "editor" ? "block" : "hidden", "lg:block")}
+              show={show}
+              episode={episode}
+              scenes={sceneList}
+              sets={setList}
+              characters={characterList}
+            />
+          ) : (
+            <>
+              {/* Script editor — its own independent scroll, fills the center. */}
+              <main
+                className={clsx(
+                  "min-h-0 min-w-0 flex-1 overflow-y-auto border-neutral-800 lg:block lg:border-r",
+                  mobilePane === "editor" ? "block" : "hidden"
+                )}
+              >
+                {scene ? (
+                  <SceneEditor
+                    key={scene.id}
+                    scene={scene}
+                    episode={episode}
+                    sets={setList}
+                    characters={characterList}
+                    onOpenSets={() => setModal("sets")}
+                    onOpenCharacters={() => setModal("characters")}
+                  />
+                ) : (
+                  <EmptyPane
+                    title={selectedEpisodeId ? "No scene selected" : "No episode selected"}
+                    body={
+                      selectedEpisodeId
+                        ? "Pick a scene from the tree, or create a new one to start writing."
+                        : "Pick or create an episode first — scenes live inside episodes."
+                    }
+                    action={
+                      selectedEpisodeId ? (
+                        <Button variant="primary" size="md" onClick={addScene}>
+                          <Plus size={13} strokeWidth={2.5} /> New scene
+                        </Button>
+                      ) : selectedShowId ? (
+                        <Button variant="primary" size="md" onClick={addEpisode}>
+                          <Plus size={13} strokeWidth={2.5} /> New episode
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                )}
+              </main>
+
+              {/* Export rail — fixed width, own independent scroll; content
+                  driven by the top-bar workspace mode. */}
+              <OutputPanel
+                mode={workspaceMode as OutputMode}
+                className={clsx(mobilePane === "output" ? "flex" : "hidden", "lg:flex")}
+                show={show}
                 episode={episode}
+                scene={scene}
+                set={set}
                 sets={setList}
                 characters={characterList}
-                onOpenSets={() => setModal("sets")}
-                onOpenCharacters={() => setModal("characters")}
+                onSceneApplied={(id) => setSelectedSceneId(id)}
               />
-            ) : (
-              <EmptyPane
-                title={selectedEpisodeId ? "No scene selected" : "No episode selected"}
-                body={
-                  selectedEpisodeId
-                    ? "Pick a scene from the tree, or create a new one to start writing."
-                    : "Pick or create an episode first — scenes live inside episodes."
-                }
-                action={
-                  selectedEpisodeId ? (
-                    <Button variant="primary" size="md" onClick={addScene}>
-                      <Plus size={13} strokeWidth={2.5} /> New scene
-                    </Button>
-                  ) : selectedShowId ? (
-                    <Button variant="primary" size="md" onClick={addEpisode}>
-                      <Plus size={13} strokeWidth={2.5} /> New episode
-                    </Button>
-                  ) : undefined
-                }
-              />
-            )}
-          </main>
-
-          {/* Export rails */}
-          <OutputPanel
-            show={show}
-            episode={episode}
-            scene={scene}
-            set={set}
-            sets={setList}
-            characters={characterList}
-            onSceneApplied={(id) => setSelectedSceneId(id)}
-          />
+            </>
+          )}
         </div>
       )}
 
@@ -279,8 +414,8 @@ export default function App() {
       <NewShowModal
         open={modal === "newShow"}
         onClose={() => setModal(null)}
-        onCreate={async (title) => {
-          const id = await createShow(title);
+        onCreate={async (title, kind) => {
+          const id = await createShow(title, kind);
           setSelectedShowId(id);
           setModal(null);
         }}
@@ -306,29 +441,63 @@ export default function App() {
           />
         </>
       )}
-      <ShowBibleModal open={modal === "bible"} onClose={() => setModal(null)} show={show} />
-      <CritiquePanel
-        open={modal === "ailab"}
+      <SettingsModal open={modal === "settings"} onClose={() => setModal(null)} />
+      <PromptLibrary
+        open={modal === "shots"}
         onClose={() => setModal(null)}
-        showTitle={show?.title ?? null}
-        showGenre={show?.genre ?? null}
-        showBibleText={show?.premise?.trim() || null}
-        currentScriptText={currentScriptText}
-        learnedTemplates={templateList}
-      />
-      <ImportPanel
-        key={modal === "import" ? "open" : "closed"}
-        open={modal === "import"}
-        onClose={() => setModal(null)}
-        show={show}
-        sets={setList}
-        characters={characterList}
-        onImported={(showId, episodeId, sceneId) => {
-          setSelectedShowId(showId);
-          if (episodeId) setSelectedEpisodeId(episodeId);
-          if (sceneId) setSelectedSceneId(sceneId);
+        title="Shot Library"
+        subtitle="Camera-move formulas — copy one into a clip's Action (camera moves live in the Action, not a separate field)."
+        categories={SHOT_CATEGORIES}
+        headerNote={{
+          label: "Professional formula",
+          mono: SHOT_FORMULA,
+          tip: "Keep a character consistent by injecting your Character Sheet anchor into the image-reference slot for every generation.",
         }}
+        searchPlaceholder="Search shots — dolly, orbit, whip, saccade…"
       />
+      <PromptLibrary
+        open={modal === "transitions"}
+        onClose={() => setModal(null)}
+        title="Transition Library"
+        subtitle="Transitions — copy one into a clip's Action (the transition into/out of a clip lives in the Action)."
+        categories={TRANSITION_CATEGORIES}
+        searchPlaceholder="Search transitions — flame, whip, tunnel, ridge…"
+      />
+      <ShowBibleModal open={modal === "bible"} onClose={() => setModal(null)} show={show} />
+      {modal === "ailab" && (
+        <Suspense fallback={null}>
+          <CritiquePanel
+            open
+            onClose={() => setModal(null)}
+            showTitle={show?.title ?? null}
+            showGenre={show?.genre ?? null}
+            showBibleText={show?.premise?.trim() || null}
+            currentScriptText={currentScriptText}
+            learnedTemplates={templateList}
+          />
+        </Suspense>
+      )}
+      {modal === "crossover" && (
+        <Suspense fallback={null}>
+          <CrossoverStudio open onClose={() => setModal(null)} shows={showList} />
+        </Suspense>
+      )}
+      {modal === "import" && (
+        <Suspense fallback={null}>
+          <ImportPanel
+            open
+            onClose={() => setModal(null)}
+            show={show}
+            sets={setList}
+            characters={characterList}
+            onImported={(showId, episodeId, sceneId) => {
+              setSelectedShowId(showId);
+              if (episodeId) setSelectedEpisodeId(episodeId);
+              if (sceneId) setSelectedSceneId(sceneId);
+            }}
+          />
+        </Suspense>
+      )}
       <FinalizeResultModal result={finalizeResult} onClose={() => setFinalizeResult(null)} />
       <Modal open={!!finalizeError} onClose={() => setFinalizeError(null)} title="Couldn't finalize episode">
         <div className="space-y-3 p-4">
@@ -390,33 +559,63 @@ function FinalizeResultModal({ result, onClose }: { result: LearnedTemplate | nu
 
 // --- New Show modal ------------------------------------------------------------
 
-function NewShowModal({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (title: string) => void }) {
+function NewShowModal({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (title: string, kind: ShowKind) => void }) {
   const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<ShowKind>("series");
 
   useEffect(() => {
-    if (open) setTitle("");
+    if (open) {
+      setTitle("");
+      setKind("series");
+    }
   }, [open]);
 
   return (
-    <Modal open={open} onClose={onClose} title="New show" subtitle="Each show keeps its own sets, characters, episodes and scenes.">
+    <Modal open={open} onClose={onClose} title="New project" subtitle="A TV series (episodes & scenes) or a movie (act-based structure).">
       <form
-        className="space-y-3 p-4"
+        className="space-y-4 p-4"
         onSubmit={(e) => {
           e.preventDefault();
-          onCreate(title.trim() || "Untitled Show");
+          onCreate(title.trim() || (kind === "movie" ? "Untitled Movie" : "Untitled Show"), kind);
         }}
       >
+        <Field label="Type">
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ["series", "TV Series", Tv, "Episodes → Scenes"],
+              ["movie", "Movie", Film, "Acts → Beats (3-act)"],
+            ] as const).map(([k, label, Icon, sub]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setKind(k)}
+                aria-pressed={kind === k}
+                className={clsx(
+                  "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
+                  kind === k
+                    ? "border-amber-500/60 bg-amber-500/10"
+                    : "border-neutral-800 bg-neutral-900 hover:border-neutral-600"
+                )}
+              >
+                <span className={clsx("inline-flex items-center gap-1.5 text-[13px] font-semibold", kind === k ? "text-amber-200" : "text-neutral-200")}>
+                  <Icon size={14} aria-hidden /> {label}
+                </span>
+                <span className="text-[11px] text-neutral-400">{sub}</span>
+              </button>
+            ))}
+          </div>
+        </Field>
         <Field label="Title">
           <TextInput
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. SIGNAL LOST — Season 1"
-            aria-label="Show title"
+            placeholder={kind === "movie" ? "e.g. THE LAST TRANSMISSION" : "e.g. SIGNAL LOST — Season 1"}
+            aria-label="Project title"
           />
         </Field>
         <Button variant="primary" size="md" className="w-full" type="submit">
-          Create show
+          Create {kind === "movie" ? "movie" : "show"}
         </Button>
       </form>
     </Modal>
@@ -457,7 +656,7 @@ function EmptyPane({ title, body, action }: { title: string; body: string; actio
     <div className="flex h-full items-center justify-center p-6">
       <div className="max-w-sm text-center">
         <p className="text-sm font-semibold text-neutral-300">{title}</p>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-600">{body}</p>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-neutral-400">{body}</p>
         {action && <div className="mt-4">{action}</div>}
       </div>
     </div>

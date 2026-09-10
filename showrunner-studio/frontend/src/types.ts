@@ -2,11 +2,29 @@
 
 export type CharacterRole = "Protagonist" | "Antagonist" | "Supporting";
 
+// A project is either a TV series (Show -> Episodes -> Scenes) or a Movie,
+// whose canonical structure is act-based (Acts -> Beats), NOT an episode list.
+export type ShowKind = "series" | "movie";
+
+export interface MovieBeat {
+  id: string;
+  title: string;
+  description: string;
+}
+
+export interface MovieAct {
+  id: string;
+  title: string;
+  beats: MovieBeat[];
+}
+
 export interface ShowMeta {
   id: string;
   title: string;
   genre: string;
   premise: string; // world rules, lore, visual style, glitch/broadcast aesthetics
+  kind?: ShowKind; // undefined is treated as "series" (back-compat with v1/v2 rows)
+  acts?: MovieAct[]; // canonical act/beat structure for movies only
   createdAt: number;
   updatedAt: number;
 }
@@ -83,6 +101,82 @@ export interface LearnedTemplate {
   concept: string;
   mechanics: string;
   beats: TemplateBeat[];
+  createdAt: number;
+}
+
+// --- Episode Prompt Engine (persisted per-scene generation prompts) ---
+// A "prompt run" is a saved snapshot of an episode compiled into per-scene,
+// copy-ready generation prompts (Showrunner or Seedance format). Runs are
+// persisted to Dexie so they survive reloads and episode switches; each card
+// can be regenerated individually from its source scene's current state.
+
+// "reference" = the AI Broadcast Prompt format: one self-contained 15-second
+// prompt (Scene / Dialogue / Action) with camera + transition + DNA detail
+// folded in. "showrunner"/"seedance" are the deterministic per-scene exports.
+export type PromptFormat = "reference" | "showrunner" | "seedance";
+
+export interface ReferenceDialogueLine {
+  character: string;
+  delivery: string;
+  line: string;
+}
+
+export interface ReferencePrompt {
+  scene: string;
+  dialogue: ReferenceDialogueLine[];
+  action: string;
+}
+
+export interface EpisodePromptCard {
+  id: string;
+  sceneId: string | null; // source scene (null for reference-format / deleted scene)
+  sceneName: string;
+  order: number;
+  prompt: string; // rendered copy-ready text
+  clips: number;
+  takes: number;
+  hasCastWarning: boolean;
+  hasPacingWarning: boolean;
+  reference?: ReferencePrompt; // structured content when format === "reference"
+  generatedAt: number;
+}
+
+export type EpisodeLength = "short" | "medium" | "large";
+
+export interface EpisodePromptRun {
+  id: string;
+  showId: string;
+  episodeId: string;
+  episodeTitle: string;
+  format: PromptFormat;
+  aspect: AspectRatio; // used when format === "seedance"
+  length?: EpisodeLength; // reference format only
+  free?: boolean; // reference format: generated without a length cap
+  cards: EpisodePromptCard[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// --- Crossover episodes (bridge two shows into one episode) ---
+
+export interface CrossoverScene {
+  name: string;
+  prompts: ReferencePrompt[]; // reference 15s Scene/Dialogue/Action beats
+}
+
+export interface StoredCrossover {
+  id: string;
+  title: string;
+  logline: string;
+  outline: string[];
+  scenes: CrossoverScene[];
+  show1Id: string;
+  show2Id: string;
+  show1Title: string;
+  show2Title: string;
+  premise: string;
+  tone: string;
+  sceneCount: number;
   createdAt: number;
 }
 

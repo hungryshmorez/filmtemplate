@@ -120,7 +120,7 @@ export function SeedancePanel({ scene, set, characters }: SeedancePanelProps) {
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
         <Label className="text-amber-400/90">Character DNA persistence</Label>
         {Object.keys(payload.characterDna).length === 0 ? (
-          <p className="mt-1.5 text-[12px] text-neutral-600">
+          <p className="mt-1.5 text-[12px] text-neutral-400">
             No active characters. Mark characters as active in the scene editor to embed their DNA.
           </p>
         ) : (
@@ -151,7 +151,7 @@ export function SeedancePanel({ scene, set, characters }: SeedancePanelProps) {
             <span className="ml-auto font-mono text-[10px] text-neutral-500">{shot.tags}</span>
           </div>
           {shot.characterDnaRefs.length > 0 && (
-            <p className="font-mono text-[10px] text-neutral-600">DNA: {shot.characterDnaRefs.join(" · ")}</p>
+            <p className="font-mono text-[10px] text-neutral-400">DNA: {shot.characterDnaRefs.join(" · ")}</p>
           )}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="rounded-md border border-neutral-800/80 bg-neutral-950/60 p-2">
@@ -182,7 +182,7 @@ export function SeedancePanel({ scene, set, characters }: SeedancePanelProps) {
                 </li>
               ))}
               {shot.audio.voiceProfiles.map((vp, i) => (
-                <li key={`vp-${i}`} className="text-neutral-600">
+                <li key={`vp-${i}`} className="text-neutral-400">
                   voice profile ({vp.characterName}): {vp.voiceDescription}
                 </li>
               ))}

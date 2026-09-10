@@ -1,5 +1,5 @@
 // ui.tsx — Shared studio primitives: buttons, fields, modal, clipboard helper.
-import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import clsx from "clsx";
 import { Check, Copy, X } from "lucide-react";
 
@@ -29,7 +29,7 @@ export async function copyText(text: string): Promise<boolean> {
 // --- Class tokens -------------------------------------------------------------
 
 export const fieldClass =
-  "w-full rounded-md border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-[13px] leading-snug text-neutral-200 placeholder:text-neutral-600 transition-colors focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/30 disabled:opacity-40";
+  "w-full rounded-md border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-[13px] leading-snug text-neutral-200 placeholder:text-neutral-400 transition-colors focus:border-amber-500/60 focus:outline-none focus:ring-1 focus:ring-amber-500/30 disabled:opacity-40";
 
 export const selectClass = clsx(fieldClass, "cursor-pointer pr-7 [&>option]:bg-neutral-900 [&>option]:text-neutral-200");
 
@@ -91,7 +91,7 @@ export function Field({ label, hint, children, className }: { label: string; hin
     <label className={clsx("block space-y-1.5", className)}>
       <Label>{label}</Label>
       {children}
-      {hint && <span className="block text-[11px] leading-snug text-neutral-600">{hint}</span>}
+      {hint && <span className="block text-[11px] leading-snug text-neutral-400">{hint}</span>}
     </label>
   );
 }
@@ -114,14 +114,15 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
 
 // --- Chip ---------------------------------------------------------------------------
 
-export function Chip({ children, className, tone = "default" }: { children: ReactNode; className?: string; tone?: "default" | "amber" | "dim" | "danger" | "green" }) {
+export function Chip({ children, className, tone = "default", title }: { children: ReactNode; className?: string; tone?: "default" | "amber" | "dim" | "danger" | "green"; title?: string }) {
   return (
     <span
+      title={title}
       className={clsx(
         "inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 font-mono text-[10px] leading-none",
         tone === "amber" && "border-amber-500/30 bg-amber-500/10 text-amber-300",
         tone === "default" && "border-neutral-800 bg-neutral-900 text-neutral-400",
-        tone === "dim" && "border-neutral-800/60 bg-transparent text-neutral-600",
+        tone === "dim" && "border-neutral-800/60 bg-transparent text-neutral-400",
         tone === "danger" && "border-red-900/50 bg-red-950/40 text-red-300",
         tone === "green" && "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
         className
@@ -144,6 +145,48 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, subtitle, children, wide }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Escape to close, focus into the dialog on open, restore focus on close,
+  // and trap Tab within the panel while open.
+  useEffect(() => {
+    if (!open) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    const focusables = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      ).filter((el) => el.offsetParent !== null);
+    (focusables()[0] ?? panel)?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      previouslyFocused?.focus?.();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
     <div
@@ -154,8 +197,10 @@ export function Modal({ open, onClose, title, subtitle, children, wide }: ModalP
       aria-label={title}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className={clsx(
-          "flex max-h-[88vh] w-full flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl shadow-black/70",
+          "flex max-h-[88vh] w-full flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl shadow-black/70 focus:outline-none",
           wide ? "max-w-3xl" : "max-w-md"
         )}
         onMouseDown={(e) => e.stopPropagation()}
@@ -196,13 +241,13 @@ export function CopyButton({ text, label = "Copy", size = "sm", variant = "prima
         const ok = await copyText(text);
         if (ok) {
           setCopied(true);
-          window.setTimeout(() => setCopied(false), 1600);
+          window.setTimeout(() => setCopied(false), 2000);
         }
       }}
       aria-live="polite"
     >
       {copied ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} />}
-      {copied ? "Copied" : label}
+      {copied ? "Copied!" : label}
     </Button>
   );
 }

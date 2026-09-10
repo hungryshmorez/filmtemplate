@@ -5,20 +5,37 @@ import type {
   CharacterEntity,
   DialogueLine,
   EpisodeEntity,
+  MovieAct,
   SceneEntity,
   SetEntity,
+  ShowKind,
   ShowMeta,
 } from "../types";
+import { defaultMovieActs } from "./movies";
 
 const now = () => Date.now();
 
 // --- Shows -----------------------------------------------------------------
 
-export async function createShow(title: string): Promise<string> {
+export async function createShow(title: string, kind: ShowKind = "series"): Promise<string> {
   const id = uid("show");
   const ts = now();
-  await db.shows.put({ id, title: title.trim() || "Untitled Show", genre: "", premise: "", createdAt: ts, updatedAt: ts });
+  await db.shows.put({
+    id,
+    title: title.trim() || (kind === "movie" ? "Untitled Movie" : "Untitled Show"),
+    genre: "",
+    premise: "",
+    kind,
+    // Movies start on a blank standard 3-act skeleton; series never use acts.
+    acts: kind === "movie" ? defaultMovieActs() : undefined,
+    createdAt: ts,
+    updatedAt: ts,
+  });
   return id;
+}
+
+export async function updateMovieActs(showId: string, acts: MovieAct[]) {
+  await db.shows.update(showId, { acts, updatedAt: now() });
 }
 
 export async function updateShow(id: string, patch: Partial<Omit<ShowMeta, "id" | "createdAt">>) {
@@ -26,7 +43,7 @@ export async function updateShow(id: string, patch: Partial<Omit<ShowMeta, "id" 
 }
 
 export async function deleteShow(id: string) {
-  await db.transaction("rw", db.shows, db.episodes, db.scenes, db.sets, db.characters, async () => {
+  await db.transaction("rw", [db.shows, db.episodes, db.scenes, db.sets, db.characters, db.learnedTemplates, db.episodePromptRuns], async () => {
     const episodes = await db.episodes.where("showId").equals(id).toArray();
     for (const ep of episodes) {
       await db.scenes.where("episodeId").equals(ep.id).delete();
@@ -34,6 +51,9 @@ export async function deleteShow(id: string) {
     await db.episodes.where("showId").equals(id).delete();
     await db.sets.where("showId").equals(id).delete();
     await db.characters.where("showId").equals(id).delete();
+    // Cascade the show-scoped derived data so nothing is orphaned in IndexedDB.
+    await db.learnedTemplates.where("showId").equals(id).delete();
+    await db.episodePromptRuns.where("showId").equals(id).delete();
     await db.shows.delete(id);
   });
 }
@@ -62,8 +82,9 @@ export async function updateEpisode(id: string, patch: Partial<Omit<EpisodeEntit
 }
 
 export async function deleteEpisode(id: string) {
-  await db.transaction("rw", db.episodes, db.scenes, async () => {
+  await db.transaction("rw", db.episodes, db.scenes, db.episodePromptRuns, async () => {
     await db.scenes.where("episodeId").equals(id).delete();
+    await db.episodePromptRuns.where("episodeId").equals(id).delete();
     await db.episodes.delete(id);
   });
 }

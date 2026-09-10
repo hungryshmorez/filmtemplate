@@ -22,7 +22,7 @@ imon# Showrunner Studio — Project Context
 - Sidebar tree rows + catalog (Sets/Characters) delete icons are always semi-visible (not hover-only) — user needs visible affordances.
 - Node builds must route binaries through package.json scripts/npx (deploy image has no node_modules/.bin on PATH).
 - Type-check with `npx tsc --noEmit`; build with `npm run build` in frontend dir.
-- Two `start.sh` scripts exist in this project — project ROOT `start.sh` is an old unrelated "Script Studio" app; the correct one to run is `showrunner-studio/start.sh`. Always `cd showrunner-studio && ./start.sh`.
+- The launcher is `showrunner-studio/start.sh` (backend + frontend together). The repo-root `start.sh` now just delegates to it, so `./start.sh` from the root works too. The old "Script Studio" prototype (root `public/`, `source/`, `filmtemplate.txt`) has been removed.
 
 ## Pending / roadmap (user-confirmed direction, not yet built)
 - Image uploads for show covers, characters, and sets (no storage backend yet — likely Dexie blob storage since no DB connector exists).
