@@ -86,7 +86,7 @@ export function Label({ children, className }: { children: ReactNode; className?
   );
 }
 
-export function Field({ label, hint, children, className }: { label: string; hint?: string; children: ReactNode; className?: string }) {
+export function Field({ label, hint, children, className }: { label: ReactNode; hint?: string; children: ReactNode; className?: string }) {
   return (
     <label className={clsx("block space-y-1.5", className)}>
       <Label>{label}</Label>

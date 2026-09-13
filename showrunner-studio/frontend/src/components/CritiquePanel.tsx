@@ -36,11 +36,11 @@ const TABS: { kind: LabKind; label: string; icon: typeof Gavel }[] = [
 
 const TAB_HINTS: Record<LabKind, string> = {
   critique:
-    "Submit a script or series for an overall teardown. A cynical late-night network exec runs the identity test, voice check, stagnation filter and AI-sterility scrub, then rules GREENLIT, PILOT REWRITE or SHELVED.",
+    "Submit a script or series for an overall teardown. A cynical late-night network exec runs the identity test, voice check, stagnation filter and AI-sterility scrub, then rules GREENLIT, PILOT REWRITE or SHELVED. Verdicts are calibrated by severity — a revision that executes the demanded changes gets greenlit.",
   write:
     "No script yet? Give an idea and the Script Creation Engine builds a proper screenplay from it — screenplay format, active verbs, 30% dialogue / 70% action, in medias res.",
   rewrite:
-    "Surgical overhaul of an existing script: dialogue de-clutter, felt/saw filter removal, messy detail pass, subtext extraction. Output is the clean script, nothing else.",
+    "Surgical overhaul of an existing script: exec notes are mandatory and can make structural changes, then a final polish pass (dialogue de-clutter, felt/saw filter removal, messy detail pass, subtext extraction). Output is the clean script, nothing else.",
 };
 
 async function pollJob(jobId: string, maxMs = 10 * 60 * 1000): Promise<string> {
@@ -85,6 +85,12 @@ export function CritiquePanel({
   const [error, setError] = useState<string | null>(null);
   const outputRef = useRef<HTMLDivElement | null>(null);
 
+  // Revision memory for the critique -> rewrite -> critique loop. When a
+  // verdict is fed into a rewrite, we remember those exec notes so the NEXT
+  // critique runs as a revision pass (judged against the old notes) instead
+  // of a from-scratch teardown — otherwise the loop never converges.
+  const [priorNotes, setPriorNotes] = useState<string | null>(null);
+
   // Pre-fill text areas from the project the first time the panel opens.
   const [seeded, setSeeded] = useState(false);
   useEffect(() => {
@@ -100,7 +106,10 @@ export function CritiquePanel({
       }
       if (learnedTemplates.length) setLearnedTemplateId(learnedTemplates[0].id);
     }
-    if (!open) setSeeded(false);
+    if (!open) {
+      setSeeded(false);
+      setPriorNotes(null);
+    }
   }, [open, seeded, showBibleText, currentScriptText, showGenre, learnedTemplates]);
 
   useEffect(() => {
@@ -111,7 +120,7 @@ export function CritiquePanel({
 
   if (!open) return null;
 
-  const run = async (endpoint: string, body: Record<string, unknown>) => {
+  const run = async (endpoint: string, body: Record<string, unknown>, onDone?: () => void) => {
     setRunning(true);
     setError(null);
     setOutput(null);
@@ -128,6 +137,7 @@ export function CritiquePanel({
       const { job_id } = await startRes.json();
       const text = await pollJob(job_id);
       setOutput(text);
+      onDone?.();
       requestAnimationFrame(() => outputRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -139,7 +149,13 @@ export function CritiquePanel({
   const submit = () => {
     if (kind === "critique") {
       if (!critiqueText.trim()) return;
-      void run("/api/critique/start", { text: critiqueText, showTitle, genre: showGenre });
+      void run(
+        "/api/critique/start",
+        { text: critiqueText, showTitle, genre: showGenre, priorNotes },
+        // Consume the revision memory once used — the following critique is
+        // fresh unless the loop chains another rewrite.
+        () => setPriorNotes(null),
+      );
     } else if (kind === "write") {
       if (!idea.trim()) return;
       const templateBrief =
@@ -196,10 +212,12 @@ export function CritiquePanel({
     if (!output) return;
     // From "write": the freshly written script becomes the thing to rewrite.
     // From "critique": the ORIGINAL script (still sitting in critiqueText)
-    // is what gets rewritten, with the verdict fed in as exec notes.
+    // is what gets rewritten, with the verdict fed in as exec notes — and we
+    // remember those notes so the next critique is a revision pass.
     if (kind === "critique") {
       setRewriteScript(critiqueText);
       setRewriteNotes(output);
+      setPriorNotes(output);
     } else {
       setRewriteScript(output);
     }
@@ -247,7 +265,18 @@ export function CritiquePanel({
           <p className="text-[12px] leading-relaxed text-neutral-500">{TAB_HINTS[kind]}</p>
 
           {kind === "critique" && (
-            <Field label="Script / series text to critique">
+            <Field
+              label={
+                <span className="flex items-center gap-2">
+                  Script / series text to critique
+                  {priorNotes && (
+                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                      revision pass — exec will judge against its previous notes
+                    </span>
+                  )}
+                </span>
+              }
+            >
               <TextArea
                 rows={10}
                 value={critiqueText}

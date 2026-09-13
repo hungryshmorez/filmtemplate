@@ -536,7 +536,18 @@ One of: GREENLIT | PILOT REWRITE | SHELVED — followed by a one-paragraph expla
 decision, and if not greenlit, the three specific changes that would change your mind.
 
 Never soften the verdict. Never suggest changes and then reassure them it's already great. \
-You are not their friend. You are the gate."""
+You are not their friend. You are the gate.
+
+VERDICT CALIBRATION (read before ruling — verdicts are severity-ranked, not perfection-ranked):
+- GREENLIT means: ready to shoot. Every pilot shoots with network notes. If a script has a real \
+comedic/story engine, distinct voices, a genuine state change, and no AI-sterility, it is GREENLIT \
+even if you would still polish lines. PILOT REWRITE is NOT the default grade for "good but imperfect".
+- PILOT REWRITE means: at least one of the four framework points FAILS outright — no engine, no \
+state change, interchangeable voices, or AI-sterile throughout — and the fix is structural.
+- SHELVED means: the identity test itself fails — no 2 AM audience, dead after one gag, unfundable.
+- When you rule PILOT REWRITE you must name the three specific changes that would change your mind, \
+and you are bound by them: if the next draft executes those three changes, the verdict is GREENLIT. \
+Never move the goalposts after the fact. Never demand a brand-new script when you asked for a revision."""
 
 SCRIPT_ENGINE_SYSTEM_PROMPT = """\
 You are the Script Creation Engine — a raw, uncompromising screenwriting machine built from the \
@@ -596,6 +607,16 @@ invaded by it.
 4. SUBTEXT EXTRACTION. Wherever a character directly states an emotion or a want, remove the \
 statement and rebuild the beat so the want leaks out sideways — through what they do with \
 their hands, what they refuse to say, the joke they hide behind. Never announce subtext.
+
+EXEC NOTES OVERRIDE — when exec notes accompany the script, they are MANDATORY and outrank \
+the "do not change the story" rule above:
+- Treat the notes as the primary assignment. If a note demands a structural change — a new beat, \
+a rebuilt character voice, an added state change, a cut subplot, a resequenced act — make that \
+change. "You do not change the story" is suspended for exactly the changes the notes require, \
+and only those.
+- Execute every note. Do not merely tidy lines and ignore the notes.
+- After the structural work, run the four operations above as the final polish pass over the result.
+- Success condition: the output is the script the exec said would change their mind.
 
 OUTPUT: the fully rewritten script in clean screenplay format, prose only. Do NOT summarize \
 changes. Do NOT add commentary before or after. Output the script and nothing else."""
@@ -771,6 +792,11 @@ class CritiqueRequest(BaseModel):
     text: str = Field(..., description="The script / series text to critique")
     showTitle: Optional[str] = None
     genre: Optional[str] = None
+    priorNotes: Optional[str] = Field(
+        None,
+        description="Exec notes from a previous critique round. When present, the exec judges "
+        "this draft as a REVISION against those notes instead of re-tearing from scratch.",
+    )
 
 
 class WriteScriptRequest(BaseModel):
@@ -829,6 +855,19 @@ async def critique_start(req: CritiqueRequest):
     if req.showTitle or req.genre:
         header = f"SHOW: {req.showTitle or 'Untitled'}\nGENRE: {req.genre or 'unknown'}\n\n"
     prompt = f"{header}THE SUBMISSION:\n\n{req.text.strip()}"
+
+    if req.priorNotes and req.priorNotes.strip():
+        prompt += (
+            "\n\nTHIS IS A REVISION. You already read an earlier draft and ruled on it. "
+            "Your previous verdict and notes were:\n\n"
+            f"{req.priorNotes.strip()}\n\n"
+            "Judge THIS draft primarily against those notes — check each one off: was it "
+            "executed on the page? If the changes you demanded are now on the page, the verdict "
+            "is GREENLIT, even if you would still polish further. Do not re-run a from-scratch "
+            "teardown and do not invent a new fundamental failure to replace the ones you "
+            "already flagged. Only rule PILOT REWRITE again if a note was ignored or a genuinely "
+            "NEW fundamental problem exists — and name it as new."
+        )
 
     def builder():
         return [CRITIQUE_SYSTEM_PROMPT + genre_focus_block(req.genre), prompt]

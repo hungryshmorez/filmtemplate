@@ -15,19 +15,27 @@ imon# Showrunner Studio — Project Context
 - The preview runs inside a sandboxed iframe where `window.confirm()`/`alert()`/`prompt()` are silently blocked (no dialog shown, call is effectively a no-op) — this made every delete button in the app appear completely broken for weeks even though the underlying Dexie delete logic was correct.
 - Fix pattern now in place: `frontend/src/components/ConfirmDialog.tsx` exports `ConfirmProvider` (wraps `<App/>` in `main.tsx`) + `useConfirm()` hook returning `(opts: {message, title?, confirmLabel?, cancelLabel?, danger?} | string) => Promise<boolean>`. ALWAYS use `await confirm(...)` instead of `window.confirm(...)` for any destructive action, anywhere in this app.
 
+## AI Script Lab critique↔rewrite convergence contract (user-mandated after infinite-loop bug)
+- The exec critique verdicts MUST be severity-calibrated: GREENLIT = ready to shoot (minor notes fine), PILOT REWRITE = a four-point framework check fails outright and the fix is structural, SHELVED = identity test fails. PILOT REWRITE is not the default grade for "good but imperfect".
+- When the exec rules PILOT REWRITE it must name 3 specific changes and is BOUND by them: if the next draft executes them, verdict MUST be GREENLIT. Never move goalposts. (VERDICT CALIBRATION block in CRITIQUE_SYSTEM_PROMPT.)
+- The SURGICAL rewrite prompt has an EXEC NOTES OVERRIDE: exec notes are mandatory, structural changes are allowed/required for exactly what the notes demand ("do not change the story" is suspended for those), then the four polish operations run as final pass. Never weaken this — it was the root cause of rewrite-never-fixes-notes.
+- Revision loop plumbing: `CritiqueRequest.priorNotes` (backend) + `priorNotes` state in CritiquePanel.tsx. Flow: critique → "Send to Rewrite" stores verdict as rewriteNotes AND priorNotes → rewrite → "Send to Critique" submits with priorNotes → backend injects THIS-IS-A-REVISION block (judge against old notes, greenlight if executed). priorNotes clears after that critique completes; a visible amber "revision pass" badge shows when armed.
+- When touching the critique/rewrite prompts, preserve this convergence contract — any "make the exec stricter" edit risks re-creating the infinite loop.
+
 ## Patterns
 - Long AI calls run as background jobs (start + poll) to avoid Cloudflare 524: `/api/import/parse/start`, `/api/critique/start`, `/api/write-script/start`, `/api/rewrite/start`, shared status at `/api/ai/status/{id}` (import has its own status endpoint). In-memory dict job stores + daemon threads.
 - `generate_with_retry()` in backend/main.py retries 503/429 with backoff; raises clean HTTPException after 3 attempts; accepts optional `config` param passed to `generate_content`.
-- AI Script Lab (`CritiquePanel.tsx`, sidebar button "AI Script Lab"): 3 master prompts in `backend/main.py` — `CRITIQUE_SYSTEM_PROMPT` (Adult Swim Executive Critique, verdict GREENLIT|PILOT REWRITE|SHELVED), `SCRIPT_ENGINE_SYSTEM_PROMPT` (idea → screenplay, AI-tell word ban, 30/70 dialogue-action, in medias res), `SURGICAL_SYSTEM_PROMPT` (de-clutter, felt/saw filter, messy details, subtext). Currently genre-agnostic — pending work to parameterize per-genre (see Pending below).
+- `Field` in `frontend/src/components/ui.tsx` accepts `ReactNode` label (widened for the revision-pass badge) — don't revert to `string`.
 - Sidebar tree rows + catalog (Sets/Characters) delete icons are always semi-visible (not hover-only) — user needs visible affordances.
 - Node builds must route binaries through package.json scripts/npx (deploy image has no node_modules/.bin on PATH).
 - Type-check with `npx tsc --noEmit`; build with `npm run build` in frontend dir.
 - Two `start.sh` scripts exist in this project — project ROOT `start.sh` is an old unrelated "Script Studio" app; the correct one to run is `showrunner-studio/start.sh`. Always `cd showrunner-studio && ./start.sh`.
+- The dev-server preview sandbox is EPHEMERAL (temporary sessions, ~120 min lifetime; processes die when the sandbox recycles). Frequent "site died" reports are expected; fix is restart via showrunner-studio/start.sh. Publishing gives a persistent deployment. Backend cold start on a fresh sandbox takes ~60-90s — poll health before declaring failure.
 
 ## Pending / roadmap (user-confirmed direction, not yet built)
 - Image uploads for show covers, characters, and sets (no storage backend yet — likely Dexie blob storage since no DB connector exists).
 - Genre-aware critique/write/rewrite prompts across 14 genres: Comedy, Sitcom, Drama, Reality TV, Sci-Fi, Anime, Fantasy, Family, Western, Crime, Action & Adventure, Romance, Horror, Live Action.
-- Recursive write→critique→rewrite loop in AI Script Lab.
+- Recursive write→critique→rewrite loop in AI Script Lab — partially addressed via the convergence contract above; a fully automated multi-round loop (auto-iterate until GREENLIT with max-N rounds) is still future work.
 - **Story template library**: user wants a `templates.ts`-style library that (a) is offered as brainstorm scaffolding when writing an episode, and (b) grows organically — when the user finishes/finalizes an episode, the app should strip a general reusable template out of it and save it back to the library. This is a distinct "learn from what you ship" loop, not just a static seed list. TV templates should feed the "Write Script" step per-genre.
 - **Movies as a new top-level entity** (user-confirmed design):
   - Separate top-level type from TV Shows. Source-of-truth structure is **act-based** (e.g. 3-act, or custom acts/beats), NOT an episode list.
